@@ -1,3 +1,5 @@
 BasedOnStyle: LLVM
+ColumnLimit: 150
 InsertBraces: true
 InsertNewlineAtEOF: true
+PointerAlignment: Left

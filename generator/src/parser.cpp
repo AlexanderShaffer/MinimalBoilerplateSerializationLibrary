@@ -30,13 +30,23 @@ struct DeclarationType {
 
 class State {
 public:
-  explicit State(const std::filesystem::path& config_path) : m_input{config_path} {}
+  explicit State(const std::filesystem::path& config_path) : m_config{config_path} {}
 
   std::endian endianness_{};
 
   std::string_view get_next_token() {
-    m_input >> m_token;
-    return m_input ? m_token : m_token.erase();
+    if (read() != "/*") {
+      return m_token;
+    }
+
+    while (read() != "*/") {
+      if (!has_next_token()) {
+        m_eof_error_message = "unterminated comment";
+        return {};
+      }
+    }
+
+    return get_next_token();
   }
 
   void target_declaration_type(const DeclarationType& declaration_type) {
@@ -51,10 +61,12 @@ public:
   [[nodiscard]] std::string_view get_eof_error_message() const { return m_eof_error_message; }
 
 private:
-  std::ifstream m_input{};
+  std::ifstream m_config{};
   std::string m_token{};
   const DeclarationParsers* m_declaration_parsers{};
   std::string_view m_eof_error_message{};
+
+  std::string_view read() { return m_config >> m_token ? m_token : m_token.erase(); }
 };
 
 template<typename Key, typename Value>

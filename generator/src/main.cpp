@@ -17,21 +17,20 @@
  */
 
 import std;
+import parser;
+import writer;
 
 int main(const int argc, const char* const* const argv) {
-  std::span args{argv, static_cast<std::size_t>(argc)};
+  const std::span args{argv, static_cast<std::size_t>(argc)};
+
+  writer::write_module_declarations();
 
   for (std::size_t i{1}; i < args.size(); i++) {
-    if (const std::filesystem::path config_path{args[i]};
-        std::filesystem::exists(config_path) && !std::filesystem::is_directory(config_path) && config_path.extension() == ".mbsl") {
-      std::println("Found config file: {}", config_path.native());
+    if (const std::filesystem::path config_path{args[i]}; std::filesystem::exists(config_path) && !std::filesystem::is_directory(config_path) &&
+                                                          config_path.extension() == ".mbsl" && !parser::parse_config(config_path)) {
+      return 1;
     }
   }
 
-  std::ofstream interface{"mbsl.cppm"};
-  std::ofstream implementation{"mbsl.cpp"};
-
-  interface << "export module mbsl;\n";
-  implementation << "module mbsl;\n";
   return 0;
 }

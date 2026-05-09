@@ -27,7 +27,13 @@ if (NOT MBSL_CONFIG_DIR)
   message(FATAL_ERROR "The MBSL_CONFIG_DIR variable must be set to a directory containing .mbsl files.")
 endif ()
 
-add_executable(Generator generator/src/main.cpp)
+add_executable(Generator)
+
+target_sources(
+  Generator
+  PRIVATE generator/src/main.cpp generator/src/parser.cpp generator/src/writer.cpp
+  PRIVATE FILE_SET CXX_MODULES FILES generator/src/parser.cppm generator/src/writer.cppm
+)
 
 file(
   GLOB CONFIG_FILES
@@ -38,7 +44,7 @@ file(
 add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/mbsl.cpp" "${CMAKE_CURRENT_BINARY_DIR}/mbsl.cppm"
   COMMAND Generator ${CONFIG_FILES}
-  DEPENDS ${CONFIG_FILES}
+  DEPENDS ${CONFIG_FILES} Generator
   COMMENT "Generating MinimalBoilerplateSerializationLibrary"
   VERBATIM CODEGEN
 )

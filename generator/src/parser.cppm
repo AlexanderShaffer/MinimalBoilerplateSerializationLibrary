@@ -16,6 +16,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import mbsl;
+export module parser;
+import std;
 
-int main() { return 0; }
+export namespace parser {
+bool parse_config(const std::filesystem::path&);
+} // namespace parser

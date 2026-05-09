@@ -16,6 +16,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import mbsl;
+export module writer;
+import std;
 
-int main() { return 0; }
+export namespace writer {
+void write_module_declarations();
+} // namespace writer

@@ -16,6 +16,16 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import mbsl;
+module writer;
 
-int main() { return 0; }
+namespace {
+std::ofstream g_interface{"mbsl.cppm"};
+std::ofstream g_implementation{"mbsl.cpp"};
+} // namespace
+
+namespace writer {
+void write_module_declarations() {
+  g_interface << "export module mbsl;\n";
+  g_implementation << "module mbsl;\n";
+}
+} // namespace writer

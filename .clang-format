@@ -3,3 +3,7 @@ ColumnLimit: 150
 InsertBraces: true
 InsertNewlineAtEOF: true
 PointerAlignment: Left
+ContinuationIndentWidth: 2
+ConstructorInitializerIndentWidth: 2
+SpaceAfterTemplateKeyword: false
+BreakTemplateDeclarations: Yes

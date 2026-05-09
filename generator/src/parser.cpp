@@ -19,13 +19,19 @@
 module parser;
 
 namespace {
-enum class Declaration : std::uint8_t { ENDIANNESS, TYPE };
+class State;
+using ParseDeclaration = std::function<bool(State&)>;
+using DeclarationParsers = std::unordered_map<std::string_view, ParseDeclaration>;
+
+struct DeclarationType {
+  DeclarationParsers parsers_{};
+  std::string_view eof_error_message_{};
+};
 
 class State {
 public:
   explicit State(const std::filesystem::path& config_path) : m_input{config_path} {}
 
-  Declaration declaration_{Declaration::ENDIANNESS};
   std::endian endianness_{};
 
   std::string_view get_next_token() {
@@ -33,39 +39,23 @@ public:
     return m_input ? m_token : m_token.erase();
   }
 
+  void target_declaration_type(const DeclarationType& declaration_type) {
+    m_declaration_parsers = &declaration_type.parsers_;
+    m_eof_error_message = declaration_type.eof_error_message_;
+  }
+
   [[nodiscard]] bool has_next_token() const { return !m_token.empty(); }
+  [[nodiscard]] bool has_eof_error_message() const { return !m_eof_error_message.empty(); }
   [[nodiscard]] std::string_view get_current_token() const { return m_token; }
+  [[nodiscard]] const DeclarationParsers& get_declaration_parsers() const { return *m_declaration_parsers; }
+  [[nodiscard]] std::string_view get_eof_error_message() const { return m_eof_error_message; }
 
 private:
   std::ifstream m_input{};
   std::string m_token{};
+  const DeclarationParsers* m_declaration_parsers{};
+  std::string_view m_eof_error_message{};
 };
-
-using ParseDeclaration = std::function<bool(State&)>;
-
-bool parse_comment(State& state) {
-  std::string_view current_token{};
-
-  while ((current_token = state.get_next_token()) != "*/") {
-    if (current_token.empty()) {
-      std::println("Error: unterminated comment");
-      return false;
-    }
-  }
-
-  return true;
-}
-
-ParseDeclaration assign_declaration_parser(const Declaration assigned_declaration, ParseDeclaration&& parse_declaration) {
-  return [=, parse_declaration = std::move(parse_declaration)](State& state) {
-    if (state.declaration_ == assigned_declaration) {
-      return parse_declaration(state);
-    }
-
-    std::println("Error: unexpected token \"{}\"", state.get_current_token());
-    return false;
-  };
-}
 
 template<typename Key, typename Value>
 std::optional<std::reference_wrapper<const Value>> find(const std::unordered_map<Key, Value>& map, State& state) {
@@ -76,27 +66,29 @@ std::optional<std::reference_wrapper<const Value>> find(const std::unordered_map
   return std::nullopt;
 }
 
+bool parse_struct_declaration(const State& state) {
+  return true; // TODO: Implement this function
+}
+
 bool parse_endianness_declaration(State& state) {
   if (state.get_next_token() != "=") {
     std::println("Error: expected the endianness to be defined using the \"=\" operator");
     return false;
   }
 
-  static const std::unordered_map<std::string_view, std::endian> ENDIANNESS_MAP{
+  static const std::unordered_map<std::string_view, std::endian> ENDIANNESS_OPTIONS{
     {"little", std::endian::little}, {"big", std::endian::big}, {"native", std::endian::native}};
 
-  if (const auto endianness{find(ENDIANNESS_MAP, state)}) {
+  if (const auto endianness{find(ENDIANNESS_OPTIONS, state)}) {
     state.endianness_ = *endianness;
-    state.declaration_ = Declaration::TYPE;
+
+    static const DeclarationType TYPE{.parsers_{{"struct", parse_struct_declaration}}};
+    state.target_declaration_type(TYPE);
     return true;
   }
 
   std::println("Error: invalid endianness \"{}\"", state.get_current_token());
   return false;
-}
-
-bool parse_struct_declaration(const State& state) {
-  return true; // TODO: Implement this function
 }
 } // namespace
 
@@ -105,31 +97,28 @@ bool parse_config(const std::filesystem::path& config_path) {
   State state{config_path};
   bool success{true};
 
-  while (success) {
-    static const std::unordered_map<std::string_view, ParseDeclaration> DECLARATION_PARSERS{
-      {"/*", parse_comment},
-      {"endianness", assign_declaration_parser(Declaration::ENDIANNESS, parse_endianness_declaration)},
-      {"struct", assign_declaration_parser(Declaration::TYPE, parse_struct_declaration)}};
+  {
+    static const DeclarationType ENDIANNESS{.parsers_{{"endianness", parse_endianness_declaration}},
+                                            .eof_error_message_{"the required first declaration \"endianness = <little|big|native>\" is missing"}};
+    state.target_declaration_type(ENDIANNESS);
+  }
 
-    if (const auto parse_declaration{find(DECLARATION_PARSERS, state)}) {
+  while (success) {
+    if (const auto parse_declaration{find(state.get_declaration_parsers(), state)}) {
       success = (*parse_declaration)(state);
       continue;
     }
 
-    if (state.has_next_token()) {
-      std::println("Error: unrecognized token \"{}\"", state.get_current_token());
+    if (state.has_next_token() || state.has_eof_error_message()) {
+      std::println("Error: {}",
+                   state.has_next_token() ? std::format("unrecognized token \"{}\"", state.get_current_token()) : state.get_eof_error_message());
       success = false;
     }
 
     break;
   }
 
-  if (success) {
-    std::println("Generated source code from \"{}\"", config_path.native());
-  } else {
-    std::println("Error: \"{}\" is malformed", config_path.native());
-  }
-
+  std::println("{} \"{}\"{}", success ? "Generated source code from" : "Error:", config_path.native(), success ? "" : " is malformed");
   return success;
 }
 } // namespace parser

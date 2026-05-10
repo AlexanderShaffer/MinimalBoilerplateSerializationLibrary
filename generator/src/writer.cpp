@@ -24,8 +24,19 @@ std::ofstream g_implementation{"mbsl.cpp"};
 } // namespace
 
 namespace writer {
+block::block(const bool interface, const std::string_view type, const std::string_view name, const bool semicolon_end)
+  : m_ofstream{interface ? &g_interface : &g_implementation}, m_type{type}, m_name{name}, m_semicolon_end{semicolon_end} {
+  std::println(*m_ofstream, "{} {} {{", m_type, m_name);
+}
+
+block::~block() { std::println(*m_ofstream, "}}{}", m_semicolon_end ? ";" : ""); }
+
+void struct_block::write_member(const std::string_view type, const std::string_view identifier) const {
+  std::println(*m_ofstream, "  {} {}{{}};", type, identifier);
+}
+
 void write_module_declarations() {
-  g_interface << "export module mbsl;\n";
-  g_implementation << "module mbsl;\n";
+  std::println(g_interface, "export module mbsl;\nimport std;");
+  std::println(g_implementation, "module mbsl;");
 }
 } // namespace writer

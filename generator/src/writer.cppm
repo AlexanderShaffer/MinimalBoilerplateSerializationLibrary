@@ -20,5 +20,36 @@ export module writer;
 import std;
 
 export namespace writer {
+class block {
+public:
+  block(bool interface, std::string_view type, std::string_view name, bool semicolon_end);
+  ~block();
+  block(const block& other) = default;
+  block(block&& other) = default;
+  block& operator=(const block& other) = default;
+  block& operator=(block&& other) = default;
+
+protected:
+  std::ofstream* m_ofstream{};
+
+private:
+  std::string_view m_type{};
+  std::string_view m_name{};
+  bool m_semicolon_end{};
+};
+
+class namespace_block : public block {
+public:
+  namespace_block(const bool interface, const bool exported, const std::string_view name)
+    : block{interface, exported ? "export namespace" : "namespace", name, false} {}
+};
+
+class struct_block : public block {
+public:
+  explicit struct_block(const std::string_view name) : block{true, "struct", name, true} {}
+
+  void write_member(std::string_view type, std::string_view identifier) const;
+};
+
 void write_module_declarations();
 } // namespace writer

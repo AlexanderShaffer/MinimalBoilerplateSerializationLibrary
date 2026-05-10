@@ -19,18 +19,18 @@
 module parser;
 
 namespace {
-class State;
-using ParseDeclaration = std::function<bool(State&)>;
-using DeclarationParsers = std::unordered_map<std::string_view, ParseDeclaration>;
+class state;
+using parse_declaration = std::function<bool(state&)>;
+using declaration_parsers = std::unordered_map<std::string_view, parse_declaration>;
 
-struct DeclarationType {
-  DeclarationParsers parsers_{};
+struct declaration_type {
+  declaration_parsers parsers_{};
   std::string_view eof_error_message_{};
 };
 
-class State {
+class state {
 public:
-  explicit State(const std::filesystem::path& config_path) : m_config{config_path} {}
+  explicit state(const std::filesystem::path& config_path) : m_config{config_path} {}
 
   std::endian endianness_{};
 
@@ -49,7 +49,7 @@ public:
     return get_next_token();
   }
 
-  void target_declaration_type(const DeclarationType& declaration_type) {
+  void target_declaration_type(const declaration_type& declaration_type) {
     m_declaration_parsers = &declaration_type.parsers_;
     m_eof_error_message = declaration_type.eof_error_message_;
   }
@@ -57,20 +57,20 @@ public:
   [[nodiscard]] bool has_next_token() const { return !m_token.empty(); }
   [[nodiscard]] bool has_eof_error_message() const { return !m_eof_error_message.empty(); }
   [[nodiscard]] std::string_view get_current_token() const { return m_token; }
-  [[nodiscard]] const DeclarationParsers& get_declaration_parsers() const { return *m_declaration_parsers; }
+  [[nodiscard]] const declaration_parsers& get_declaration_parsers() const { return *m_declaration_parsers; }
   [[nodiscard]] std::string_view get_eof_error_message() const { return m_eof_error_message; }
 
 private:
   std::ifstream m_config{};
   std::string m_token{};
-  const DeclarationParsers* m_declaration_parsers{};
+  const declaration_parsers* m_declaration_parsers{};
   std::string_view m_eof_error_message{};
 
   std::string_view read() { return m_config >> m_token ? m_token : m_token.erase(); }
 };
 
 template<typename Key, typename Value>
-std::optional<std::reference_wrapper<const Value>> find(const std::unordered_map<Key, Value>& map, State& state) {
+std::optional<std::reference_wrapper<const Value>> find(const std::unordered_map<Key, Value>& map, state& state) {
   if (const auto iterator{map.find(state.get_next_token())}; iterator != map.end()) {
     return iterator->second;
   }
@@ -78,11 +78,11 @@ std::optional<std::reference_wrapper<const Value>> find(const std::unordered_map
   return std::nullopt;
 }
 
-bool parse_struct_declaration(const State& state) {
+bool parse_struct_declaration(const state& state) {
   return true; // TODO: Implement this function
 }
 
-bool parse_endianness_declaration(State& state) {
+bool parse_endianness_declaration(state& state) {
   if (state.get_next_token() != "=") {
     std::println("Error: expected the endianness to be defined using the \"=\" operator");
     return false;
@@ -94,7 +94,7 @@ bool parse_endianness_declaration(State& state) {
   if (const auto endianness{find(ENDIANNESS_OPTIONS, state)}) {
     state.endianness_ = *endianness;
 
-    static const DeclarationType TYPE{.parsers_{{"struct", parse_struct_declaration}}};
+    static const declaration_type TYPE{.parsers_{{"struct", parse_struct_declaration}}};
     state.target_declaration_type(TYPE);
     return true;
   }
@@ -106,12 +106,12 @@ bool parse_endianness_declaration(State& state) {
 
 namespace parser {
 bool parse_config(const std::filesystem::path& config_path) {
-  State state{config_path};
+  state state{config_path};
   bool success{true};
 
   {
-    static const DeclarationType ENDIANNESS{.parsers_{{"endianness", parse_endianness_declaration}},
-                                            .eof_error_message_{"the required first declaration \"endianness = <little|big|native>\" is missing"}};
+    static const declaration_type ENDIANNESS{.parsers_{{"endianness", parse_endianness_declaration}},
+                                             .eof_error_message_{"the required first declaration \"endianness = <little|big|native>\" is missing"}};
     state.target_declaration_type(ENDIANNESS);
   }
 
@@ -123,7 +123,7 @@ bool parse_config(const std::filesystem::path& config_path) {
 
     if (state.has_next_token() || state.has_eof_error_message()) {
       std::println("Error: {}",
-                   state.has_next_token() ? std::format("unrecognized token \"{}\"", state.get_current_token()) : state.get_eof_error_message());
+                   state.has_next_token() ? std::format("unexpected token \"{}\"", state.get_current_token()) : state.get_eof_error_message());
       success = false;
     }
 

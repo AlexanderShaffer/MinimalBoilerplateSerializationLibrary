@@ -20,7 +20,7 @@
 endianness = native
 
 /* Defines a C++ struct in the mbsl namespace with automatically generated serialization and deserialization functions. */
-struct Example {
+struct example {
   int x
   double y
 }

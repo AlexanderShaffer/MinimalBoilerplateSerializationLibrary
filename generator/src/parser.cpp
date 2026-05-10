@@ -17,6 +17,7 @@
  */
 
 module parser;
+import writer;
 
 namespace {
 class state;
@@ -40,8 +41,8 @@ public:
     }
 
     while (read() != "*/") {
-      if (!has_next_token()) {
-        m_eof_error_message = "unterminated comment";
+      if (!has_current_token()) {
+        m_eof_error_message = "all comments must be terminated by a \"*/\"";
         return {};
       }
     }
@@ -54,7 +55,7 @@ public:
     m_eof_error_message = declaration_type.eof_error_message_;
   }
 
-  [[nodiscard]] bool has_next_token() const { return !m_token.empty(); }
+  [[nodiscard]] bool has_current_token() const { return !m_token.empty(); }
   [[nodiscard]] bool has_eof_error_message() const { return !m_eof_error_message.empty(); }
   [[nodiscard]] std::string_view get_current_token() const { return m_token; }
   [[nodiscard]] const declaration_parsers& get_declaration_parsers() const { return *m_declaration_parsers; }
@@ -78,8 +79,25 @@ std::optional<std::reference_wrapper<const Value>> find(const std::unordered_map
   return std::nullopt;
 }
 
-bool parse_struct_declaration(const state& state) {
-  return true; // TODO: Implement this function
+bool parse_struct_declaration(state& state) {
+  const writer::struct_block struct_block{state.get_next_token()};
+
+  if (state.get_next_token() != "{") {
+    std::println("Error: a struct definition must begin with \"{{\"");
+    return false;
+  }
+
+  while (state.get_next_token() != "}") {
+    if (!state.has_current_token()) {
+      std::println("Error: all structs must be terminated by a \"}}\"");
+      return false;
+    }
+
+    struct_block.write_type(state.get_current_token());
+    struct_block.write_value(state.get_next_token());
+  }
+
+  return true;
 }
 
 bool parse_endianness_declaration(state& state) {
@@ -121,9 +139,9 @@ bool parse_config(const std::filesystem::path& config_path) {
       continue;
     }
 
-    if (state.has_next_token() || state.has_eof_error_message()) {
+    if (state.has_current_token() || state.has_eof_error_message()) {
       std::println("Error: {}",
-                   state.has_next_token() ? std::format("unexpected token \"{}\"", state.get_current_token()) : state.get_eof_error_message());
+                   state.has_current_token() ? std::format("unexpected token \"{}\"", state.get_current_token()) : state.get_eof_error_message());
       success = false;
     }
 

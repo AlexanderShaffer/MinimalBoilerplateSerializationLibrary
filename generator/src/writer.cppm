@@ -48,7 +48,8 @@ class struct_block : public block {
 public:
   explicit struct_block(const std::string_view name) : block{true, "struct", name, true} {}
 
-  void write_member(std::string_view type, std::string_view identifier) const;
+  void write_type(std::string_view type) const;
+  void write_value(std::string_view value) const;
 };
 
 void write_module_declarations();

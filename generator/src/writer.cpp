@@ -31,9 +31,8 @@ block::block(const bool interface, const std::string_view type, const std::strin
 
 block::~block() { std::println(*m_ofstream, "}}{}", m_semicolon_end ? ";" : ""); }
 
-void struct_block::write_member(const std::string_view type, const std::string_view identifier) const {
-  std::println(*m_ofstream, "  {} {}{{}};", type, identifier);
-}
+void struct_block::write_type(std::string_view type) const { std::print(*m_ofstream, "  {} ", type); }
+void struct_block::write_value(std::string_view value) const { std::println(*m_ofstream, "{};", value); }
 
 void write_module_declarations() {
   std::println(g_interface, "export module mbsl;\nimport std;");

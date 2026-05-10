@@ -19,23 +19,19 @@
 module writer;
 
 namespace {
-std::ofstream g_interface{"mbsl.cppm"};
-std::ofstream g_implementation{"mbsl.cpp"};
+std::ofstream g_out{"mbsl.cppm"};
 } // namespace
 
 namespace writer {
-block::block(const bool interface, const std::string_view type, const std::string_view name, const bool semicolon_end)
-  : m_ofstream{interface ? &g_interface : &g_implementation}, m_type{type}, m_name{name}, m_semicolon_end{semicolon_end} {
-  std::println(*m_ofstream, "{} {} {{", m_type, m_name);
+block::block(const std::string_view type, const std::string_view name, const bool semicolon_end)
+  : m_type{type}, m_name{name}, m_semicolon_end{semicolon_end} {
+  std::println(g_out, "{} {} {{", m_type, m_name);
 }
 
-block::~block() { std::println(*m_ofstream, "}}{}", m_semicolon_end ? ";" : ""); }
+block::~block() { std::println(g_out, "}}{}", m_semicolon_end ? ";" : ""); }
 
-void struct_block::write_type(std::string_view type) const { std::print(*m_ofstream, "  {} ", type); }
-void struct_block::write_value(std::string_view value) const { std::println(*m_ofstream, "{};", value); }
+void struct_block::write_type(std::string_view type) { std::print(g_out, "  {} ", type); }
+void struct_block::write_value(std::string_view value) { std::println(g_out, "{};", value); }
 
-void write_module_declarations() {
-  std::println(g_interface, "export module mbsl;\nimport std;");
-  std::println(g_implementation, "module mbsl;");
-}
+void write_module_declaration() { std::println(g_out, "export module mbsl;\nimport std;"); }
 } // namespace writer

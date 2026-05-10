@@ -93,8 +93,8 @@ bool parse_struct_declaration(state& state) {
       return false;
     }
 
-    struct_block.write_type(state.get_current_token());
-    struct_block.write_value(state.get_next_token());
+    writer::struct_block::write_type(state.get_current_token());
+    writer::struct_block::write_value(state.get_next_token());
   }
 
   return true;

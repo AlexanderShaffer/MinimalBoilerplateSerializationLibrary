@@ -23,8 +23,8 @@ import writer;
 int main(const int argc, const char* const* const argv) {
   const std::span args{argv, static_cast<std::size_t>(argc)};
 
-  writer::write_module_declarations();
-  writer::namespace_block mbsl_namespace{true, true, "mbsl"};
+  writer::write_module_declaration();
+  writer::namespace_block mbsl_namespace{true, "mbsl"};
 
   for (std::size_t i{1}; i < args.size(); i++) {
     if (const std::filesystem::path config_path{args[i]}; std::filesystem::exists(config_path) && !std::filesystem::is_directory(config_path) &&

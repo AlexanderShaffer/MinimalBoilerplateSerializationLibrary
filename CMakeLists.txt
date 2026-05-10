@@ -42,7 +42,7 @@ file(
 )
 
 add_custom_command(
-  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/mbsl.cpp" "${CMAKE_CURRENT_BINARY_DIR}/mbsl.cppm"
+  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/mbsl.cppm"
   COMMAND Generator ${CONFIG_FILES}
   DEPENDS ${CONFIG_FILES} Generator
   COMMENT "Generating MinimalBoilerplateSerializationLibrary"
@@ -52,7 +52,6 @@ add_custom_command(
 add_library(MinimalBoilerplateSerializationLibrary STATIC)
 
 target_sources(
-  MinimalBoilerplateSerializationLibrary
-  PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/mbsl.cpp"
-  PUBLIC FILE_SET CXX_MODULES BASE_DIRS "${CMAKE_CURRENT_BINARY_DIR}" FILES "${CMAKE_CURRENT_BINARY_DIR}/mbsl.cppm"
+  MinimalBoilerplateSerializationLibrary PUBLIC FILE_SET CXX_MODULES BASE_DIRS "${CMAKE_CURRENT_BINARY_DIR}" FILES
+                                                "${CMAKE_CURRENT_BINARY_DIR}/mbsl.cppm"
 )

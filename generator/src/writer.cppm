@@ -22,15 +22,12 @@ import std;
 export namespace writer {
 class block {
 public:
-  block(bool interface, std::string_view type, std::string_view name, bool semicolon_end);
+  block(std::string_view type, std::string_view name, bool semicolon_end);
   ~block();
-  block(const block& other) = default;
-  block(block&& other) = default;
-  block& operator=(const block& other) = default;
-  block& operator=(block&& other) = default;
-
-protected:
-  std::ofstream* m_ofstream{};
+  block(const block& other) = delete;
+  block(block&& other) = delete;
+  void operator=(const block& other) = delete;
+  void operator=(block&& other) = delete;
 
 private:
   std::string_view m_type{};
@@ -40,17 +37,16 @@ private:
 
 class namespace_block : public block {
 public:
-  namespace_block(const bool interface, const bool exported, const std::string_view name)
-    : block{interface, exported ? "export namespace" : "namespace", name, false} {}
+  namespace_block(const bool exported, const std::string_view name) : block{exported ? "export namespace" : "namespace", name, false} {}
 };
 
 class struct_block : public block {
 public:
-  explicit struct_block(const std::string_view name) : block{true, "struct", name, true} {}
+  static void write_type(std::string_view type);
+  static void write_value(std::string_view value);
 
-  void write_type(std::string_view type) const;
-  void write_value(std::string_view value) const;
+  explicit struct_block(const std::string_view name) : block{"struct", name, true} {}
 };
 
-void write_module_declarations();
+void write_module_declaration();
 } // namespace writer

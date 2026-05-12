@@ -7,3 +7,4 @@ ContinuationIndentWidth: 2
 ConstructorInitializerIndentWidth: 2
 SpaceAfterTemplateKeyword: false
 BreakTemplateDeclarations: Yes
+IndentRequiresClause: false

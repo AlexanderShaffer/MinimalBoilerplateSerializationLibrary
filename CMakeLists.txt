@@ -32,7 +32,7 @@ add_executable(Generator)
 target_sources(
   Generator
   PRIVATE generator/src/main.cpp generator/src/parser.cpp generator/src/writer.cpp
-  PRIVATE FILE_SET CXX_MODULES FILES generator/src/parser.cppm generator/src/writer.cppm
+  PRIVATE FILE_SET CXX_MODULES FILES generator/src/parser.cppm generator/src/writer.cppm generator/src/library_template.cppm
 )
 
 file(

@@ -97,6 +97,35 @@ consteval bool is_valid_member_order() {
 
   return is_valid_member_order<NextT, Ts...>();
 }
+
+template<template<typename> class IsBeforeEndPos, typename CurrentT, typename... Ts, std::same_as<std::size_t>... Pos>
+consteval std::size_t get_region_end_pos(const std::size_t current_pos, const Pos... pos) {
+  if constexpr (sizeof...(Ts) > 0) {
+    return IsBeforeEndPos<CurrentT>::VALUE ? get_region_end_pos<IsBeforeEndPos, Ts...>(pos...) : current_pos;
+  } else {
+    return IsBeforeEndPos<CurrentT>::VALUE ? (pos, ...) : current_pos;
+  }
+}
+
+template<typename T>
+struct is_before_endianness_susceptible_region {
+  static constexpr bool VALUE{EndiannessResistant<T>};
+};
+
+template<typename... Ts, std::same_as<std::size_t>... Pos>
+consteval std::size_t get_endianness_resistant_region_end_pos(const Pos... pos) {
+  return get_region_end_pos<is_before_endianness_susceptible_region, Ts...>(pos...);
+}
+
+template<typename T>
+struct is_before_noncontiguous_region {
+  static constexpr bool VALUE{!Noncontiguous<T>};
+};
+
+template<typename... Ts, std::same_as<std::size_t>... Pos>
+consteval std::size_t get_endianness_susceptible_region_end_pos(const Pos... pos) {
+  return get_region_end_pos<is_before_noncontiguous_region, Ts...>(pos...);
+}
 } // namespace
 )"};
 } // namespace library_template

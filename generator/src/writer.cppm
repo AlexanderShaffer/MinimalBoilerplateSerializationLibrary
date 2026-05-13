@@ -20,33 +20,26 @@ export module writer;
 import std;
 
 export namespace writer {
-class block {
+class library_template_block {
 public:
-  block(std::string_view type, std::string_view name, bool semicolon_end);
-  ~block();
-  block(const block& other) = delete;
-  block(block&& other) = delete;
-  void operator=(const block& other) = delete;
-  void operator=(block&& other) = delete;
-
-private:
-  std::string_view m_type{};
-  std::string_view m_name{};
-  bool m_semicolon_end{};
+  library_template_block();
+  ~library_template_block();
+  library_template_block(const library_template_block& other) = delete;
+  library_template_block(library_template_block&& other) = delete;
+  void operator=(const library_template_block& other) = delete;
+  void operator=(library_template_block&& other) = delete;
 };
 
-class namespace_block : public block {
-public:
-  namespace_block(const bool exported, const std::string_view name) : block{exported ? "export namespace" : "namespace", name, false} {}
-};
-
-class struct_block : public block {
+class struct_block {
 public:
   static void write_type(std::string_view type);
   static void write_value(std::string_view value);
 
-  explicit struct_block(const std::string_view name) : block{"struct", name, true} {}
+  explicit struct_block(std::string_view name);
+  ~struct_block();
+  struct_block(const struct_block& other) = delete;
+  struct_block(struct_block&& other) = delete;
+  void operator=(const struct_block& other) = delete;
+  void operator=(struct_block&& other) = delete;
 };
-
-void write_module_declaration();
 } // namespace writer

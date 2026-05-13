@@ -17,21 +17,19 @@
  */
 
 module writer;
+import library_template;
 
 namespace {
 std::ofstream g_out{"mbsl.cppm"};
 } // namespace
 
 namespace writer {
-block::block(const std::string_view type, const std::string_view name, const bool semicolon_end)
-  : m_type{type}, m_name{name}, m_semicolon_end{semicolon_end} {
-  std::println(g_out, "{} {} {{", m_type, m_name);
-}
+library_template_block::library_template_block() { std::println(g_out, "{}\nexport namespace mbsl {{", library_template::DATA); }
+library_template_block::~library_template_block() { std::println(g_out, "}} // namespace mbsl"); }
 
-block::~block() { std::println(g_out, "}}{}", m_semicolon_end ? ";" : ""); }
+struct_block::struct_block(const std::string_view name) { std::println(g_out, "struct {} {{", name); }
+struct_block::~struct_block() { std::println(g_out, "}};"); }
 
 void struct_block::write_type(std::string_view type) { std::print(g_out, "  {} ", type); }
 void struct_block::write_value(std::string_view value) { std::println(g_out, "{};", value); }
-
-void write_module_declaration() { std::println(g_out, "export module mbsl;\nimport std;"); }
 } // namespace writer

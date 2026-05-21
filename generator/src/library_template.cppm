@@ -20,7 +20,7 @@ export module library_template;
 
 export namespace library_template {
 constexpr auto* DATA{
-  R"(/*
+R"(/*
  * This file is part of MinimalBoilerplateSerializationLibrary.
  * Copyright (C) 2026 Alexander Shaffer <alexander.shaffer.623@gmail.com>
  *
@@ -45,14 +45,14 @@ namespace {
 template<typename T, template<typename> class Requirement>
 concept Number = (std::is_arithmetic_v<T> || std::is_enum_v<T>) && Requirement<T>::VALUE;
 
-template<typename T, template<typename> class Requirement>
-concept StdArray = requires(T t) {
+template<typename T>
+concept StdArray = requires (T t) {
   requires std::same_as<T, std::array<typename T::value_type, t.size()>>;
   requires !t.empty();
-} && Number<typename T::value_type, Requirement>;
+};
 
 template<typename T, template<typename> class Requirement>
-concept EndiannessReaction = Number<T, Requirement> || StdArray<T, Requirement>;
+concept EndiannessReaction = Number<T, Requirement> || (StdArray<T> && Number<typename T::value_type, Requirement>);
 
 template<typename T>
 struct is_size_one {
@@ -98,12 +98,22 @@ consteval bool is_valid_member_order() {
   return is_valid_member_order<NextT, Ts...>();
 }
 
-template<template<typename> class IsBeforeEndPos, typename CurrentT, typename... Ts, std::same_as<std::size_t>... Pos>
-consteval std::size_t get_region_end_pos(const std::size_t current_pos, const Pos... pos) {
-  if constexpr (sizeof...(Ts) > 0) {
-    return IsBeforeEndPos<CurrentT>::VALUE ? get_region_end_pos<IsBeforeEndPos, Ts...>(pos...) : current_pos;
+template<typename MemberType, size_t MEMBER_OFFSET>
+struct member {
+  using type = MemberType;
+  static constexpr auto OFFSET{MEMBER_OFFSET};
+};
+
+template<typename T>
+concept Member = std::same_as<T, member<typename T::type, T::OFFSET>>;
+
+template<template<typename> class IsBeforeEndPos, Member CurrentMember, Member... Members>
+requires requires { IsBeforeEndPos<typename CurrentMember::type>::VALUE; }
+consteval std::size_t get_region_end_pos() {
+  if constexpr (sizeof...(Members) > 0) {
+    return IsBeforeEndPos<typename CurrentMember::type>::VALUE ? get_region_end_pos<IsBeforeEndPos, Members...>() : CurrentMember::OFFSET;
   } else {
-    return IsBeforeEndPos<CurrentT>::VALUE ? (pos, ...) : current_pos;
+    return CurrentMember::OFFSET;
   }
 }
 
@@ -112,9 +122,9 @@ struct is_before_endianness_susceptible_region {
   static constexpr bool VALUE{EndiannessResistant<T>};
 };
 
-template<typename... Ts, std::same_as<std::size_t>... Pos>
-consteval std::size_t get_endianness_resistant_region_end_pos(const Pos... pos) {
-  return get_region_end_pos<is_before_endianness_susceptible_region, Ts...>(pos...);
+template<Member... Members>
+consteval std::size_t get_endianness_resistant_region_end_pos() {
+  return get_region_end_pos<is_before_endianness_susceptible_region, Members...>();
 }
 
 template<typename T>
@@ -122,9 +132,9 @@ struct is_before_noncontiguous_region {
   static constexpr bool VALUE{!Noncontiguous<T>};
 };
 
-template<typename... Ts, std::same_as<std::size_t>... Pos>
-consteval std::size_t get_endianness_susceptible_region_end_pos(const Pos... pos) {
-  return get_region_end_pos<is_before_noncontiguous_region, Ts...>(pos...);
+template<Member... Members>
+consteval std::size_t get_endianness_susceptible_region_end_pos() {
+  return get_region_end_pos<is_before_noncontiguous_region, Members...>();
 }
 } // namespace
 )"};

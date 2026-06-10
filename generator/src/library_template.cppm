@@ -136,6 +136,36 @@ template<Member... Members>
 consteval std::size_t get_endianness_susceptible_region_end_pos() {
   return get_region_end_pos<is_before_noncontiguous_region, Members...>();
 }
+
+template<typename T, std::integral CurrentIntegral, std::integral... Integrals>
+void swap_bytes(const auto& in, auto& out) {
+  if constexpr (sizeof(T) == sizeof(CurrentIntegral)) {
+    reinterpret_cast<CurrentIntegral&>(out) = std::byteswap(reinterpret_cast<const CurrentIntegral&>(in));
+  } else if constexpr (sizeof...(Integrals) > 0) {
+    swap_bytes<T, Integrals...>(in, out);
+  } else {
+    static_assert(false, "Cannot byte swap a type with an unsupported size");
+  }
+}
+
+template<typename T>
+void swap_bytes(const size_t offset, const auto& in, auto& out) {
+  const auto& in_pos{reinterpret_cast<const std::byte*>(&in)[offset]};
+  auto& out_pos{reinterpret_cast<std::byte*>(&out)[offset]};
+
+  swap_bytes<T, std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t>(in_pos, out_pos);
+}
+
+template<typename Member>
+void swap_bytes_if_endianness_susceptible(const auto& in, auto& out) {
+  if constexpr (StdArray<typename Member::type> && EndiannessSusceptible<typename Member::type>) {
+    for (size_t i{}; i < sizeof(typename Member::type); i += sizeof(typename Member::type::value_type)) {
+      swap_bytes<typename Member::type::value_type>(Member::OFFSET + i, in, out);
+    }
+  } else if constexpr (EndiannessSusceptible<typename Member::type>) {
+    swap_bytes<typename Member::type>(Member::OFFSET, in, out);
+  }
+}
 } // namespace
 )"};
 } // namespace library_template

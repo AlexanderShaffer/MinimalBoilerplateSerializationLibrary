@@ -17,9 +17,10 @@
  */
 
 export module library_template;
+import std;
 
 export namespace library_template {
-constexpr auto* DATA{
+constexpr std::string_view START{
 R"(/*
  * This file is part of MinimalBoilerplateSerializationLibrary.
  * Copyright (C) 2026 Alexander Shaffer <alexander.shaffer.623@gmail.com>
@@ -167,5 +168,9 @@ void swap_bytes_if_endianness_susceptible(const auto& in, auto& out) {
   }
 }
 } // namespace
+
+export namespace mbsl {
 )"};
+
+constexpr std::string_view END{"} // namespace mbsl\n"};
 } // namespace library_template

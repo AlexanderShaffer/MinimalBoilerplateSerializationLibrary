@@ -24,8 +24,8 @@ std::ofstream g_out{"mbsl.cppm"};
 } // namespace
 
 namespace writer {
-library_template_block::library_template_block() { std::println(g_out, "{}\nexport namespace mbsl {{", library_template::DATA); }
-library_template_block::~library_template_block() { std::println(g_out, "}} // namespace mbsl"); }
+library_template_block::library_template_block() { std::print(g_out, "{}", library_template::START); }
+library_template_block::~library_template_block() { std::print(g_out, "{}", library_template::END); }
 
 struct_block::struct_block(const std::string_view name) { std::println(g_out, "struct {} {{", name); }
 struct_block::~struct_block() { std::println(g_out, "}};"); }

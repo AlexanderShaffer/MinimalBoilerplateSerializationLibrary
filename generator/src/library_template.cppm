@@ -86,17 +86,17 @@ struct member {
 template<typename T>
 concept Member = std::same_as<T, member<typename T::type, T::OFFSET>>;
 
-template<typename T, Member... Members>
-struct member_list;
+template<Member CurrentMember, Member... Members>
+struct region_parser;
 
-template<typename T, Member Member>
-struct member_list<T, Member> {
-  template<template<typename> class IsBeforeEndPos>
-  static constexpr auto REGION_END_POS{IsBeforeEndPos<typename Member::type>::VALUE ? sizeof(T) : Member::OFFSET};
+template<Member Member>
+struct region_parser<Member> {
+  template<template<typename> class IsBefore>
+  static constexpr auto REGION_OFFSET{Member::OFFSET + (IsBefore<typename Member::type>::VALUE ? sizeof(typename Member::type) : 0)};
 };
 
-template<typename T, Member CurrentMember, Member NextMember, Member... Members>
-struct member_list<T, CurrentMember, NextMember, Members...> : member_list<T, NextMember, Members...> {
+template<Member CurrentMember, Member NextMember, Member... Members>
+struct region_parser<CurrentMember, NextMember, Members...> : region_parser<NextMember, Members...> {
   static_assert(!EndiannessSusceptible<typename CurrentMember::type> || !EndiannessResistant<typename NextMember::type>,
                 "Endianness resistant members must precede endianness susceptible members");
 
@@ -106,25 +106,26 @@ struct member_list<T, CurrentMember, NextMember, Members...> : member_list<T, Ne
   static_assert(!Noncontiguous<typename CurrentMember::type> || !EndiannessSusceptible<typename NextMember::type>,
                 "Endianness susceptible members must precede noncontiguous members");
 
-  template<template<typename> class IsBeforeEndPos>
-  static constexpr auto REGION_END_POS{IsBeforeEndPos<typename CurrentMember::type>::VALUE
-                                         ? member_list<T, NextMember, Members...>::template REGION_END_POS<IsBeforeEndPos>
-                                         : CurrentMember::OFFSET};
-
-  template<typename U>
-  struct is_before_endianness_susceptible_region {
-    static constexpr bool VALUE{EndiannessResistant<U>};
-  };
-
-  static constexpr auto ENDIANNESS_RESISTANT_REGION_END_POS{REGION_END_POS<is_before_endianness_susceptible_region>};
-
-  template<typename U>
-  struct is_before_noncontiguous_region {
-    static constexpr bool VALUE{!Noncontiguous<U>};
-  };
-
-  static constexpr auto ENDIANNESS_SUSCEPTIBLE_REGION_END_POS{REGION_END_POS<is_before_noncontiguous_region>};
+  template<template<typename> class IsBefore>
+  static constexpr auto REGION_OFFSET{
+    IsBefore<typename CurrentMember::type>::VALUE ? region_parser<NextMember, Members...>::template REGION_OFFSET<IsBefore> : CurrentMember::OFFSET};
 };
+
+template<Member... Members>
+struct member_serializer : region_parser<Members...> {
+  template<typename T>
+  struct is_before_endianness_susceptible_region {
+    static constexpr bool VALUE{EndiannessResistant<T>};
+  };
+
+  template<typename T>
+  struct is_before_noncontiguous_region {
+    static constexpr bool VALUE{!Noncontiguous<T>};
+  };
+};
+
+template<typename T>
+struct serializer;
 
 template<typename T, std::integral CurrentIntegral, std::integral... Integrals>
 void swap_bytes(const auto& in, auto& out) {

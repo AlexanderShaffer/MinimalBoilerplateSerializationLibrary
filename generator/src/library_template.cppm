@@ -97,14 +97,14 @@ struct region_parser<Member> {{
 
 template<Member CurrentMember, Member NextMember, Member... Members>
 struct region_parser<CurrentMember, NextMember, Members...> : region_parser<NextMember, Members...> {{
-  static_assert(!EndiannessSusceptible<typename CurrentMember::type> || !EndiannessResistant<typename NextMember::type>,
-                "Endianness resistant members must precede endianness susceptible members");
+  static_assert(!EndiannessSusceptible<typename CurrentMember::type> || !Noncontiguous<typename NextMember::type>,
+                "Noncontiguous members must precede endianness susceptible members");
 
-  static_assert(!Noncontiguous<typename CurrentMember::type> || !EndiannessResistant<typename NextMember::type>,
-                "Endianness resistant members must precede noncontiguous members");
+  static_assert(!EndiannessResistant<typename CurrentMember::type> || !Noncontiguous<typename NextMember::type>,
+                "Noncontiguous members must precede endianness resistant members");
 
-  static_assert(!Noncontiguous<typename CurrentMember::type> || !EndiannessSusceptible<typename NextMember::type>,
-                "Endianness susceptible members must precede noncontiguous members");
+  static_assert(!EndiannessResistant<typename CurrentMember::type> || !EndiannessSusceptible<typename NextMember::type>,
+                "Endianness susceptible members must precede endianness resistant members");
 
   template<template<typename> class IsBefore>
   static constexpr auto REGION_OFFSET{{
@@ -117,17 +117,7 @@ struct registered_struct {{
   struct serializer;
 
   template<>
-  struct serializer<Struct> : region_parser<Members...> {{
-    template<typename T>
-    struct is_before_endianness_susceptible_region {{
-      static constexpr bool VALUE{{EndiannessResistant<T>}};
-    }};
-
-    template<typename T>
-    struct is_before_noncontiguous_region {{
-      static constexpr bool VALUE{{!Noncontiguous<T>}};
-    }};
-  }};
+  struct serializer<Struct> : region_parser<Members...> {{}};
 }};
 
 template<class... RegisteredStructs>

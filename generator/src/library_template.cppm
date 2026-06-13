@@ -111,21 +111,27 @@ struct region_parser<CurrentMember, NextMember, Members...> : region_parser<Next
     IsBefore<typename CurrentMember::type>::VALUE ? region_parser<NextMember, Members...>::template REGION_OFFSET<IsBefore> : CurrentMember::OFFSET}};
 }};
 
-template<Member... Members>
-struct member_serializer : region_parser<Members...> {{
+template<class Struct, std::endian ENDIANNESS, Member... Members>
+struct registered_struct {{
   template<typename T>
-  struct is_before_endianness_susceptible_region {{
-    static constexpr bool VALUE{{EndiannessResistant<T>}};
-  }};
+  struct serializer;
 
-  template<typename T>
-  struct is_before_noncontiguous_region {{
-    static constexpr bool VALUE{{!Noncontiguous<T>}};
+  template<>
+  struct serializer<Struct> : region_parser<Members...> {{
+    template<typename T>
+    struct is_before_endianness_susceptible_region {{
+      static constexpr bool VALUE{{EndiannessResistant<T>}};
+    }};
+
+    template<typename T>
+    struct is_before_noncontiguous_region {{
+      static constexpr bool VALUE{{!Noncontiguous<T>}};
+    }};
   }};
 }};
 
-template<typename T>
-struct serializer;
+template<class... RegisteredStructs>
+struct struct_registry : RegisteredStructs... {{}};
 
 template<typename T, std::integral CurrentIntegral, std::integral... Integrals>
 void swap_bytes(const auto& in, auto& out) {{

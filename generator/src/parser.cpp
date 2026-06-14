@@ -33,7 +33,7 @@ class state {
 public:
   explicit state(const std::filesystem::path& config_path) : m_config{config_path} {}
 
-  std::endian endianness_{};
+  std::string_view endianness_{};
 
   std::string_view get_next_token() {
     if (read() != "/*") {
@@ -80,12 +80,14 @@ std::optional<std::reference_wrapper<const Value>> find(const std::unordered_map
 }
 
 bool parse_struct_declaration(state& state) {
-  const writer::struct_block struct_block{state.get_next_token()};
+  const std::string struct_name{state.get_next_token()};
 
   if (state.get_next_token() != "{") {
     std::println("Error: a struct definition must begin with \"{{\"");
     return false;
   }
+
+  writer::struct_block::begin(struct_name, state.endianness_);
 
   while (state.get_next_token() != "}") {
     if (!state.has_current_token()) {
@@ -93,10 +95,11 @@ bool parse_struct_declaration(state& state) {
       return false;
     }
 
-    writer::struct_block::write_type(state.get_current_token());
-    writer::struct_block::write_value(state.get_next_token());
+    writer::struct_block::add_member_type(state.get_current_token());
+    writer::struct_block::add_member_name(struct_name, state.get_next_token());
   }
 
+  writer::struct_block::end();
   return true;
 }
 
@@ -106,8 +109,8 @@ bool parse_endianness_declaration(state& state) {
     return false;
   }
 
-  static const std::unordered_map<std::string_view, std::endian> ENDIANNESS_OPTIONS{
-    {"little", std::endian::little}, {"big", std::endian::big}, {"native", std::endian::native}};
+  static const std::unordered_map<std::string_view, std::string_view> ENDIANNESS_OPTIONS{
+    {"little", "std::endian::little"}, {"big", "std::endian::big"}, {"native", "std::endian::native"}};
 
   if (const auto endianness{find(ENDIANNESS_OPTIONS, state)}) {
     state.endianness_ = *endianness;

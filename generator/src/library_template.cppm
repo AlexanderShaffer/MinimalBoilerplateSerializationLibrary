@@ -20,7 +20,7 @@ export module library_template;
 import std;
 
 export namespace library_template {
-constexpr std::string_view START{
+constexpr std::string_view FORMAT_STRING{
 R"(/*
  * This file is part of MinimalBoilerplateSerializationLibrary.
  * Copyright (C) 2026 Alexander Shaffer <alexander.shaffer.623@gmail.com>
@@ -39,8 +39,13 @@ R"(/*
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+module;
+#include <cstddef>
 export module mbsl;
 import std;
+
+namespace mbsl {{
+export {{{}}}
 
 namespace {{
 template<typename T, template<typename> class Requirement>
@@ -112,7 +117,7 @@ struct region_parser<CurrentMember, NextMember, Members...> : region_parser<Next
 }};
 
 template<class Struct, std::endian ENDIANNESS, Member... Members>
-struct registered_struct {{
+struct struct_register {{
   template<typename T>
   struct serializer;
 
@@ -120,8 +125,11 @@ struct registered_struct {{
   struct serializer<Struct> : region_parser<Members...> {{}};
 }};
 
-template<class... RegisteredStructs>
-struct struct_registry : RegisteredStructs... {{}};
+template<class... StructRegisters>
+struct struct_registry : StructRegisters... {{}};
+
+using registry = struct_registry<{}
+>;
 
 template<typename T, std::integral CurrentIntegral, std::integral... Integrals>
 void swap_bytes(const auto& in, auto& out) {{
@@ -153,9 +161,6 @@ void swap_bytes_if_endianness_susceptible(const auto& in, auto& out) {{
   }}
 }}
 }} // namespace
-
-export namespace mbsl {{
+}} // namespace mbsl
 )"};
-
-constexpr std::string_view END{"}} // namespace mbsl\n"};
 } // namespace library_template

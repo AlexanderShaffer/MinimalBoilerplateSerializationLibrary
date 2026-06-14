@@ -21,6 +21,6 @@ endianness = native
 
 /* Defines a C++ struct in the mbsl namespace with automatically generated serialization and deserialization functions. */
 struct example {
-  double x_{}
-  int y_{}
+  double x_
+  int y_
 }

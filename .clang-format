@@ -9,6 +9,7 @@ ConstructorInitializerIndentWidth: 2
 SpaceAfterTemplateKeyword: false
 BreakTemplateDeclarations: Yes
 IndentRequiresClause: false
+IndentExportBlock: false
 SpaceBeforeParens: Custom
 SpaceBeforeParensOptions:
   AfterRequiresInClause: true

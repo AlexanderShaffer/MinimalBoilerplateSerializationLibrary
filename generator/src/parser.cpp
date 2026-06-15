@@ -19,6 +19,7 @@
 module parser;
 import writer;
 
+namespace parser {
 namespace {
 class state;
 using parse_declaration = std::function<bool(state&)>;
@@ -125,7 +126,6 @@ bool parse_endianness_declaration(state& state) {
 }
 } // namespace
 
-namespace parser {
 bool parse_config(const std::filesystem::path& config_path) {
   state state{config_path};
   bool success{true};

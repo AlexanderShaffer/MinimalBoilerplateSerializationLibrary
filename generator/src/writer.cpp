@@ -29,7 +29,7 @@ bool g_first_struct{true};
 namespace struct_block {
 void begin(const std::string_view name, const std::string_view endianness) {
   g_struct_definitions += std::format("\nstruct {} {{\n", name);
-  g_struct_registers += std::format("{}struct_register<{}, {}", g_first_struct ? "\n" : ",\n", name, endianness);
+  g_struct_registers += std::format("{}  struct_register<{}, {}", g_first_struct ? "\n" : ",\n", name, endianness);
 }
 
 void add_member_type(const std::string_view type) {

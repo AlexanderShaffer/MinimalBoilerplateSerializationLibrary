@@ -44,6 +44,8 @@ module;
 export module mbsl;
 import std;
 
+static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big, "Mixed endianness is unsupported");
+
 namespace mbsl {{
 export {{{}}}
 
@@ -123,10 +125,34 @@ struct struct_register {{
 
   template<>
   struct serializer<Struct> : region_parser<Members...> {{}};
+
+  static constexpr auto VALIDATOR_SIZE{{(sizeof...(Members) * 2) + 1}};
+
+  template<std::size_t VALUE>
+  static consteval void insert(const std::span<std::uint16_t> validator, std::size_t& index) {{
+    static_assert(VALUE <= std::numeric_limits<std::uint16_t>::max(),
+                  "Registered structs must have member offsets and sizes that are at most the 16-bit unsigned integer limit");
+
+    const auto value{{static_cast<std::uint16_t>(VALUE)}};
+    validator[index++] = std::endian::native == std::endian::little ? value : std::byteswap(value);
+  }}
+
+  static consteval void create_validator(const std::span<std::uint16_t> validator, std::size_t& index) {{
+    ((insert<Members::OFFSET>(validator, index), insert<sizeof(typename Members::type)>(validator, index)), ...);
+    insert<sizeof(Struct)>(validator, index);
+  }}
 }};
 
 template<class... StructRegisters>
-struct struct_registry : StructRegisters... {{}};
+struct struct_registry : StructRegisters... {{
+  static consteval auto create_validator() {{
+    std::array<std::uint16_t, (StructRegisters::VALIDATOR_SIZE + ...)> validator{{}};
+    std::size_t index{{}};
+
+    (StructRegisters::create_validator(validator, index), ...);
+    return validator;
+  }}
+}};
 
 using registry = struct_registry<{}
 >;
@@ -161,6 +187,10 @@ void swap_bytes_if_endianness_susceptible(const auto& in, auto& out) {{
   }}
 }}
 }} // namespace
+
+export {{
+constexpr auto VALIDATOR{{registry::create_validator()}};
+}}
 }} // namespace mbsl
 )"};
 } // namespace library_template

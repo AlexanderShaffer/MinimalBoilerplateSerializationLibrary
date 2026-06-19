@@ -22,10 +22,14 @@ import writer;
 
 int main(const int argc, const char* const* const argv) {
   const std::span args{argv, static_cast<std::size_t>(argc)};
+  auto config_paths{args | std::views::drop(1) | std::ranges::to<std::vector<std::filesystem::path>>()};
 
-  for (std::size_t i{1}; i < args.size(); i++) {
-    if (const std::filesystem::path config_path{args[i]}; std::filesystem::exists(config_path) && !std::filesystem::is_directory(config_path) &&
-                                                          config_path.extension() == ".mbsl" && !parser::parse_config(config_path)) {
+  std::ranges::sort(config_paths);
+
+  for (const auto& config_path : config_paths) {
+    if (!std::filesystem::exists(config_path) || std::filesystem::is_directory(config_path)) {
+      std::println("Ignoring \"{}\" because it is not a file that exists", config_path.native());
+    } else if (!parser::parse_config(config_path)) {
       return 1;
     }
   }

@@ -21,17 +21,27 @@ import parser;
 import writer;
 
 int main(const int argc, const char* const* const argv) {
-  const std::span args{argv, static_cast<std::size_t>(argc)};
-  auto config_paths{args | std::views::drop(1) | std::ranges::to<std::vector<std::filesystem::path>>()};
+  const auto config_paths{std::span{argv, static_cast<std::size_t>(argc)} | std::views::drop(1)};
+  std::size_t max_config_size{};
 
-  std::ranges::sort(config_paths);
+  for (const auto* const path : config_paths) {
+    std::filesystem::path config_path{path};
 
-  for (const auto& config_path : config_paths) {
     if (!std::filesystem::exists(config_path) || std::filesystem::is_directory(config_path)) {
-      std::println("Ignoring \"{}\" because it is not a file that exists", config_path.native());
-    } else if (!parser::parse_config(config_path)) {
+      std::println("Aborting because \"{}\" is not a file that exists", config_path.native());
       return 1;
     }
+
+    max_config_size = std::max(max_config_size, std::filesystem::file_size(config_path));
+  }
+
+  std::string config(max_config_size, '\0');
+
+  for (const auto* const config_path : config_paths) {
+    std::ifstream config_file{config_path, std::ios::binary};
+
+    config_file.read(config.data(), config.size());
+    // TODO: Redesign the parser module to parse a std::string
   }
 
   writer::write_library();

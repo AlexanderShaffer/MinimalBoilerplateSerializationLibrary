@@ -20,5 +20,5 @@ export module parser;
 import std;
 
 export namespace parser {
-bool parse_config(const std::filesystem::path&);
+bool parse(std::string_view config_path, std::string_view config);
 } // namespace parser

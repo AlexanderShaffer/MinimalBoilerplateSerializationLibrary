@@ -21,27 +21,30 @@ import parser;
 import writer;
 
 int main(const int argc, const char* const* const argv) {
-  const auto config_paths{std::span{argv, static_cast<std::size_t>(argc)} | std::views::drop(1)};
+  const auto args{std::span{argv, static_cast<std::size_t>(argc)} | std::views::drop(1)};
   std::size_t max_config_size{};
 
-  for (const auto* const path : config_paths) {
-    std::filesystem::path config_path{path};
+  for (const auto* const arg : args) {
+    std::filesystem::path config_path{arg};
 
     if (!std::filesystem::exists(config_path) || std::filesystem::is_directory(config_path)) {
-      std::println("Aborting because \"{}\" is not a file that exists", config_path.native());
+      std::println("Error: \"{}\" is not a file that exists", arg);
       return 1;
     }
 
     max_config_size = std::max(max_config_size, std::filesystem::file_size(config_path));
   }
 
-  std::string config(max_config_size, '\0');
-
-  for (const auto* const config_path : config_paths) {
+  for (std::string config(max_config_size, '\0'); const auto* const config_path : args) {
     std::ifstream config_file{config_path, std::ios::binary};
 
+    if (!config_file) {
+      std::println("Error: failed to open \"{}\"", config_path);
+      return 1;
+    }
+
     config_file.read(config.data(), config.size());
-    // TODO: Redesign the parser module to parse a std::string
+    parser::parse(config_path, config);
   }
 
   writer::write_library();

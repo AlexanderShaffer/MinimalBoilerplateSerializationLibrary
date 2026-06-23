@@ -32,23 +32,34 @@ struct declaration_type {
 
 class state {
 public:
-  explicit state(const std::filesystem::path& config_path) : m_config{config_path} {}
+  explicit state(const std::string_view config) : m_config{config} {}
 
   std::string_view endianness_{};
 
   std::string_view get_next_token() {
-    if (read() != "/*") {
-      return m_token;
-    }
+    constexpr std::string_view WHITESPACE_OR_COMMENT{"/ \r\n\t"};
+    constexpr std::string_view WHITESPACE{WHITESPACE_OR_COMMENT.substr(1)};
 
-    while (read() != "*/") {
-      if (!has_current_token()) {
+    m_config.remove_prefix(std::min(m_config.find_first_not_of(WHITESPACE), m_config.size()));
+
+    if (constexpr std::string_view MULTILINE_COMMENT_START{"/*"}; m_config.starts_with(MULTILINE_COMMENT_START)) {
+      constexpr std::string_view MULTILINE_COMMENT_END{"*/"};
+      const auto end_pos{m_config.find(MULTILINE_COMMENT_END)};
+
+      if (end_pos == std::string_view::npos) {
         m_eof_error_message = "all comments must be terminated by a \"*/\"";
+        m_token = {};
         return {};
       }
+
+      m_config.remove_prefix(end_pos + MULTILINE_COMMENT_END.size());
+      return get_next_token();
     }
 
-    return get_next_token();
+    const std::string_view next_token{m_config.begin(), std::min(m_config.find_first_of(WHITESPACE_OR_COMMENT), m_config.size())};
+    m_config.remove_prefix(next_token.size());
+    m_token = next_token;
+    return next_token;
   }
 
   void target_declaration_type(const declaration_type& declaration_type) {
@@ -63,12 +74,10 @@ public:
   [[nodiscard]] std::string_view get_eof_error_message() const { return m_eof_error_message; }
 
 private:
-  std::ifstream m_config{};
-  std::string m_token{};
+  std::string_view m_config{};
+  std::string_view m_token{};
   const declaration_parsers* m_declaration_parsers{};
   std::string_view m_eof_error_message{};
-
-  std::string_view read() { return m_config >> m_token ? m_token : m_token.erase(); }
 };
 
 template<typename Key, typename Value>
@@ -126,8 +135,8 @@ bool parse_endianness_declaration(state& state) {
 }
 } // namespace
 
-bool parse_config(const std::filesystem::path& config_path) {
-  state state{config_path};
+bool parse(const std::string_view config_path, const std::string_view config) {
+  state state{config};
   bool success{true};
 
   {
@@ -151,7 +160,7 @@ bool parse_config(const std::filesystem::path& config_path) {
     break;
   }
 
-  std::println("{} \"{}\"{}", success ? "Generated source code from" : "Error:", config_path.native(), success ? "" : " is malformed");
+  std::println("{} \"{}\"{}", success ? "Generated source code from" : "Error:", config_path, success ? "" : " is malformed");
   return success;
 }
 } // namespace parser

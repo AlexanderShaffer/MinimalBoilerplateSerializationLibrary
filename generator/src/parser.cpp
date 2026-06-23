@@ -97,7 +97,7 @@ bool parse_struct_declaration(state& state) {
     return false;
   }
 
-  writer::struct_block::begin(struct_name, state.endianness_);
+  writer::struct_block struct_block{struct_name, state.endianness_};
 
   while (state.get_next_token() != "}") {
     if (!state.has_current_token()) {
@@ -105,11 +105,8 @@ bool parse_struct_declaration(state& state) {
       return false;
     }
 
-    writer::struct_block::add_member_type(state.get_current_token());
-    writer::struct_block::add_member_name(struct_name, state.get_next_token());
+    struct_block.add_member(state.get_current_token(), state.get_next_token());
   }
-
-  writer::struct_block::end();
   return true;
 }
 

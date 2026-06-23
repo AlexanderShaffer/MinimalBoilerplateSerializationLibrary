@@ -20,12 +20,20 @@ export module writer;
 import std;
 
 export namespace writer {
-namespace struct_block {
-void begin(std::string_view name, std::string_view endianness);
-void add_member_type(std::string_view type);
-void add_member_name(std::string_view struct_name, std::string_view member_name);
-void end();
-} // namespace struct_block
+class struct_block {
+public:
+  struct_block(std::string_view name, std::string_view endianness);
+  ~struct_block();
+  struct_block(const struct_block& other) = delete;
+  struct_block(struct_block&& other) = delete;
+  void operator=(const struct_block& other) = delete;
+  void operator=(struct_block&& other) = delete;
+
+  void add_member(std::string_view type, std::string_view name);
+
+private:
+  std::string_view m_name{};
+};
 
 void write_library();
 } // namespace writer

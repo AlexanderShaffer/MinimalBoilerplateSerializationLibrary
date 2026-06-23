@@ -26,28 +26,21 @@ std::string g_struct_registers{};
 bool g_first_struct{true};
 } // namespace
 
-namespace struct_block {
-void begin(const std::string_view name, const std::string_view endianness) {
+struct_block::struct_block(const std::string_view name, const std::string_view endianness) : m_name{name} {
   g_struct_definitions += std::format("\nstruct {} {{\n", name);
   g_struct_registers += std::format("{}  struct_register<{}, {}", g_first_struct ? "\n" : ",\n", name, endianness);
 }
 
-void add_member_type(const std::string_view type) {
-  g_struct_definitions += std::format("  {} ", type);
-  g_struct_registers += std::format(", member<{}, ", type);
-}
-
-void add_member_name(const std::string_view struct_name, const std::string_view member_name) {
-  g_struct_definitions += std::format("{}{{}};\n", member_name);
-  g_struct_registers += std::format("offsetof({}, {})>", struct_name, member_name);
-}
-
-void end() {
+struct_block::~struct_block() {
   g_struct_definitions += "};\n";
   g_struct_registers += ">";
   g_first_struct = false;
 }
-} // namespace struct_block
+
+void struct_block::add_member(const std::string_view type, const std::string_view name) {
+  g_struct_definitions += std::format("  {} {}{{}};\n", type, name);
+  g_struct_registers += std::format(", member<{}, offsetof({}, {})>", type, m_name, name);
+}
 
 void write_library() {
   std::ofstream out{"mbsl.cppm"};

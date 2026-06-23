@@ -64,7 +64,7 @@ private:
   std::string_view m_eof_error_message{};
 };
 
-bool parse_struct_declaration(state& state) {
+bool parse_struct(state& state) {
   writer::struct_block struct_block{state.get_next_token(), state.endianness_};
 
   if (state.get_next_token() != "{") {
@@ -84,21 +84,14 @@ bool parse_struct_declaration(state& state) {
   return true;
 }
 
-bool parse_endianness_declaration(state& state) {
+bool parse_endianness(state& state) {
   if (state.get_next_token() != "=") {
     std::println("Error: expected the endianness to be defined using the \"=\" operator");
     return false;
   }
 
-  static const std::unordered_set<std::string_view> ENDIANNESS_OPTIONS{"little", "big", "native"};
-
-  if (ENDIANNESS_OPTIONS.contains(state.get_next_token())) {
-    state.endianness_ = state.get_current_token();
-    return true;
-  }
-
-  std::println("Error: invalid endianness \"{}\"", state.get_current_token());
-  return false;
+  state.endianness_ = state.get_next_token();
+  return true;
 }
 } // namespace
 
@@ -107,11 +100,12 @@ bool parse_config(const std::string_view path, const std::string_view data) {
   bool success{true};
 
   while (success) {
-    static const std::unordered_map<std::string_view, std::function<bool(parser::state&)>> DECLARATION_PARSERS{
-      {"endianness", parse_endianness_declaration}, {"struct", parse_struct_declaration}};
+    static const std::unordered_map<std::string_view, std::function<bool(parser::state&)>> PARSERS{{"endianness", parse_endianness},
+                                                                                                   {"struct", parse_struct}};
 
-    if (const auto iterator{DECLARATION_PARSERS.find(state.get_next_token())}; iterator != DECLARATION_PARSERS.end()) {
-      success = iterator->second(state);
+    if (const auto iterator{PARSERS.find(state.get_next_token())}; iterator != PARSERS.end()) {
+      const auto& [_, parse]{*iterator};
+      success = parse(state);
       continue;
     }
 

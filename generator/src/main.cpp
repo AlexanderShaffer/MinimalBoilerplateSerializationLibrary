@@ -44,7 +44,7 @@ int main(const int argc, const char* const* const argv) {
     }
 
     config_file.read(config.data(), config.size());
-    parser::parse(config_path, config);
+    parser::parse_config(config_path, config);
   }
 
   writer::write_library();

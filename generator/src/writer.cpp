@@ -28,7 +28,7 @@ bool g_first_struct{true};
 
 struct_block::struct_block(const std::string_view name, const std::string_view endianness) : m_name{name} {
   g_struct_definitions += std::format("\nstruct {} {{\n", name);
-  g_struct_registers += std::format("{}  struct_register<{}, {}", g_first_struct ? "\n" : ",\n", name, endianness);
+  g_struct_registers += std::format("{}  struct_register<{}, std::endian::{}", g_first_struct ? "\n" : ",\n", name, endianness);
 }
 
 struct_block::~struct_block() {

@@ -21,20 +21,11 @@ import writer;
 
 namespace parser {
 namespace {
-class state;
-using parse_declaration = std::function<bool(state&)>;
-using declaration_parsers = std::unordered_map<std::string_view, parse_declaration>;
-
-struct declaration_type {
-  declaration_parsers parsers_{};
-  std::string_view eof_error_message_{};
-};
-
 class state {
 public:
   explicit state(const std::string_view config) : m_config{config} {}
 
-  std::string_view endianness_{};
+  std::string_view endianness_{"little"};
 
   std::string_view get_next_token() {
     constexpr std::string_view WHITESPACE_OR_COMMENT{"/ \r\n\t"};
@@ -62,42 +53,24 @@ public:
     return next_token;
   }
 
-  void target_declaration_type(const declaration_type& declaration_type) {
-    m_declaration_parsers = &declaration_type.parsers_;
-    m_eof_error_message = declaration_type.eof_error_message_;
-  }
-
   [[nodiscard]] bool has_current_token() const { return !m_token.empty(); }
   [[nodiscard]] bool has_eof_error_message() const { return !m_eof_error_message.empty(); }
   [[nodiscard]] std::string_view get_current_token() const { return m_token; }
-  [[nodiscard]] const declaration_parsers& get_declaration_parsers() const { return *m_declaration_parsers; }
   [[nodiscard]] std::string_view get_eof_error_message() const { return m_eof_error_message; }
 
 private:
   std::string_view m_config{};
   std::string_view m_token{};
-  const declaration_parsers* m_declaration_parsers{};
   std::string_view m_eof_error_message{};
 };
 
-template<typename Key, typename Value>
-std::optional<std::reference_wrapper<const Value>> find(const std::unordered_map<Key, Value>& map, state& state) {
-  if (const auto iterator{map.find(state.get_next_token())}; iterator != map.end()) {
-    return iterator->second;
-  }
-
-  return std::nullopt;
-}
-
 bool parse_struct_declaration(state& state) {
-  const std::string struct_name{state.get_next_token()};
+  writer::struct_block struct_block{state.get_next_token(), state.endianness_};
 
   if (state.get_next_token() != "{") {
     std::println("Error: a struct definition must begin with \"{{\"");
     return false;
   }
-
-  writer::struct_block struct_block{struct_name, state.endianness_};
 
   while (state.get_next_token() != "}") {
     if (!state.has_current_token()) {
@@ -107,6 +80,7 @@ bool parse_struct_declaration(state& state) {
 
     struct_block.add_member(state.get_current_token(), state.get_next_token());
   }
+
   return true;
 }
 
@@ -116,14 +90,10 @@ bool parse_endianness_declaration(state& state) {
     return false;
   }
 
-  static const std::unordered_map<std::string_view, std::string_view> ENDIANNESS_OPTIONS{
-    {"little", "std::endian::little"}, {"big", "std::endian::big"}, {"native", "std::endian::native"}};
+  static const std::unordered_set<std::string_view> ENDIANNESS_OPTIONS{"little", "big", "native"};
 
-  if (const auto endianness{find(ENDIANNESS_OPTIONS, state)}) {
-    state.endianness_ = *endianness;
-
-    static const declaration_type TYPE{.parsers_{{"struct", parse_struct_declaration}}};
-    state.target_declaration_type(TYPE);
+  if (ENDIANNESS_OPTIONS.contains(state.get_next_token())) {
+    state.endianness_ = state.get_current_token();
     return true;
   }
 
@@ -132,19 +102,16 @@ bool parse_endianness_declaration(state& state) {
 }
 } // namespace
 
-bool parse(const std::string_view config_path, const std::string_view config) {
-  state state{config};
+bool parse_config(const std::string_view path, const std::string_view data) {
+  state state{data};
   bool success{true};
 
-  {
-    static const declaration_type ENDIANNESS{.parsers_{{"endianness", parse_endianness_declaration}},
-                                             .eof_error_message_{"the required first declaration \"endianness = <little|big|native>\" is missing"}};
-    state.target_declaration_type(ENDIANNESS);
-  }
-
   while (success) {
-    if (const auto parse_declaration{find(state.get_declaration_parsers(), state)}) {
-      success = (*parse_declaration)(state);
+    static const std::unordered_map<std::string_view, std::function<bool(parser::state&)>> DECLARATION_PARSERS{
+      {"endianness", parse_endianness_declaration}, {"struct", parse_struct_declaration}};
+
+    if (const auto iterator{DECLARATION_PARSERS.find(state.get_next_token())}; iterator != DECLARATION_PARSERS.end()) {
+      success = iterator->second(state);
       continue;
     }
 
@@ -157,7 +124,7 @@ bool parse(const std::string_view config_path, const std::string_view config) {
     break;
   }
 
-  std::println("{} \"{}\"{}", success ? "Generated source code from" : "Error:", config_path, success ? "" : " is malformed");
+  std::println("{} \"{}\"{}", success ? "Generated source code from" : "Error:", path, success ? "" : " is malformed");
   return success;
 }
 } // namespace parser

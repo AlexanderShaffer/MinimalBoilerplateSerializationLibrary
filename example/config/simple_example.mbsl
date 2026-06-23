@@ -16,8 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-/* Required first declaration that defines the endianness of the serialized data. Valid values are little, big, and native. */
-endianness = native
+/* Defines the endianness of all structs that follow. Valid values are little, big, and native. The default endianness is little. */
+endianness = big
 
 /* Defines a C++ struct in the mbsl namespace with automatically generated serialization and deserialization functions. */
 struct example {

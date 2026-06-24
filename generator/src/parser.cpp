@@ -23,58 +23,65 @@ namespace parser {
 namespace {
 class state {
 public:
-  explicit state(const std::string_view config) : m_config{config} {}
-
   std::string_view endianness_{"little"};
+
+  explicit state(const std::string_view config) : m_config{config} {}
 
   std::string_view get_next_token() {
     constexpr std::string_view WHITESPACE_OR_COMMENT{"/ \r\n\t"};
-    constexpr std::string_view WHITESPACE{WHITESPACE_OR_COMMENT.substr(1)};
 
-    m_config.remove_prefix(std::min(m_config.find_first_not_of(WHITESPACE), m_config.size()));
+    do {
+      constexpr std::string_view WHITESPACE{WHITESPACE_OR_COMMENT.substr(1)};
+      m_config.remove_prefix(std::min(m_config.find_first_not_of(WHITESPACE), m_config.size()));
+    } while (ignore_comment());
 
-    if (constexpr std::string_view MULTILINE_COMMENT_START{"/*"}; m_config.starts_with(MULTILINE_COMMENT_START)) {
-      constexpr std::string_view MULTILINE_COMMENT_END{"*/"};
-      const auto end_pos{m_config.find(MULTILINE_COMMENT_END)};
-
-      if (end_pos == std::string_view::npos) {
-        m_eof_error_message = "all comments must be terminated by a \"*/\"";
-        m_token = {};
-        return {};
-      }
-
-      m_config.remove_prefix(end_pos + MULTILINE_COMMENT_END.size());
-      return get_next_token();
-    }
-
-    const std::string_view next_token{m_config.begin(), std::min(m_config.find_first_of(WHITESPACE_OR_COMMENT), m_config.size())};
-    m_config.remove_prefix(next_token.size());
-    m_token = next_token;
-    return next_token;
+    m_token = {m_config.substr(0, std::min(m_config.find_first_of(WHITESPACE_OR_COMMENT), m_config.size()))};
+    m_config.remove_prefix(m_token.size());
+    return m_token;
   }
 
-  [[nodiscard]] bool has_current_token() const { return !m_token.empty(); }
-  [[nodiscard]] bool has_eof_error_message() const { return !m_eof_error_message.empty(); }
   [[nodiscard]] std::string_view get_current_token() const { return m_token; }
-  [[nodiscard]] std::string_view get_eof_error_message() const { return m_eof_error_message; }
 
 private:
   std::string_view m_config{};
   std::string_view m_token{};
-  std::string_view m_eof_error_message{};
+
+  bool ignore_comment() {
+    if (constexpr std::string_view MULTILINE_COMMENT_START{"/*"}; !m_config.starts_with(MULTILINE_COMMENT_START)) {
+      return false;
+    }
+
+    constexpr std::string_view MULTILINE_COMMENT_END{"*/"};
+    const auto end_pos{m_config.find(MULTILINE_COMMENT_END)};
+
+    m_config.remove_prefix(end_pos == std::string_view::npos ? m_config.size() : end_pos + MULTILINE_COMMENT_END.size());
+    return true;
+  }
 };
+
+bool parse_endianness(state& state) {
+  if (state.get_next_token() != "=") {
+    std::println("Error: expected the endianness to be defined using an \"=\" surrounded by whitespace");
+    return false;
+  }
+
+  state.endianness_ = state.get_next_token();
+  return true;
+}
 
 bool parse_struct(state& state) {
   writer::struct_block struct_block{state.get_next_token(), state.endianness_};
 
-  if (state.get_next_token() != "{") {
-    std::println("Error: a struct definition must begin with \"{{\"");
+  if (constexpr std::string_view START{"{"}; state.get_next_token() != START) {
+    std::println("Error: a struct definition must begin with a \"{}\" surrounded by whitespace", START);
     return false;
   }
 
-  while (state.get_next_token() != "}") {
-    if (!state.has_current_token()) {
-      std::println("Error: all structs must be terminated by a \"}}\"");
+  constexpr std::string_view END{"}"};
+
+  while (state.get_next_token() != END) {
+    if (state.get_current_token().empty()) {
+      std::println("Error: all structs must end with a \"{}\" surrounded by whitespace", END);
       return false;
     }
 
@@ -84,41 +91,36 @@ bool parse_struct(state& state) {
   return true;
 }
 
-bool parse_endianness(state& state) {
-  if (state.get_next_token() != "=") {
-    std::println("Error: expected the endianness to be defined using the \"=\" operator");
-    return false;
+bool parse_unrecognized_token(const state& state) {
+  std::println("Error: unrecognized token \"{}\"", state.get_current_token());
+  return false;
+}
+
+const auto& get_parser(const std::string_view token) {
+  using parser = std::function<bool(state&)>;
+  static const std::unordered_map<std::string_view, parser> PARSERS{{"endianness", parse_endianness}, {"struct", parse_struct}};
+
+  if (const auto iterator{PARSERS.find(token)}; iterator != PARSERS.end()) {
+    const auto& [_, parse]{*iterator};
+    return parse;
   }
 
-  state.endianness_ = state.get_next_token();
-  return true;
+  static const parser PARSE_UNRECOGNIZED_TOKEN{parse_unrecognized_token};
+  return PARSE_UNRECOGNIZED_TOKEN;
 }
 } // namespace
 
 bool parse_config(const std::string_view path, const std::string_view data) {
   state state{data};
-  bool success{true};
 
-  while (success) {
-    static const std::unordered_map<std::string_view, std::function<bool(parser::state&)>> PARSERS{{"endianness", parse_endianness},
-                                                                                                   {"struct", parse_struct}};
-
-    if (const auto iterator{PARSERS.find(state.get_next_token())}; iterator != PARSERS.end()) {
-      const auto& [_, parse]{*iterator};
-      success = parse(state);
-      continue;
+  while (!state.get_next_token().empty()) {
+    if (const auto& parse{get_parser(state.get_current_token())}; !parse(state)) {
+      std::println("Error: \"{}\" is malformed", path);
+      return false;
     }
-
-    if (state.has_current_token() || state.has_eof_error_message()) {
-      std::println("Error: {}",
-                   state.has_current_token() ? std::format("unexpected token \"{}\"", state.get_current_token()) : state.get_eof_error_message());
-      success = false;
-    }
-
-    break;
   }
 
-  std::println("{} \"{}\"{}", success ? "Generated source code from" : "Error:", path, success ? "" : " is malformed");
-  return success;
+  std::println("Generated source code from \"{}\"", path);
+  return true;
 }
 } // namespace parser

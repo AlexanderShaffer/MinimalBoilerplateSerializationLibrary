@@ -58,7 +58,7 @@ private:
 
 bool parse_endianness(state& state) {
   if (state.get_next_token() != "=") {
-    std::println("Error: expected the endianness to be defined using an \"=\" surrounded by whitespace");
+    std::println(std::cerr, "Error: expected the endianness to be defined using an \"=\" surrounded by whitespace");
     return false;
   }
 
@@ -70,7 +70,7 @@ bool parse_struct(state& state) {
   writer::struct_block struct_block{state.get_next_token(), state.endianness_};
 
   if (constexpr std::string_view START{"{"}; state.get_next_token() != START) {
-    std::println("Error: a struct definition must begin with a \"{}\" surrounded by whitespace", START);
+    std::println(std::cerr, "Error: a struct definition must begin with a \"{}\" surrounded by whitespace", START);
     return false;
   }
 
@@ -78,7 +78,7 @@ bool parse_struct(state& state) {
 
   while (state.get_next_token() != END) {
     if (state.get_current_token().empty()) {
-      std::println("Error: all structs must end with a \"{}\" surrounded by whitespace", END);
+      std::println(std::cerr, "Error: all structs must end with a \"{}\" surrounded by whitespace", END);
       return false;
     }
 
@@ -89,7 +89,7 @@ bool parse_struct(state& state) {
 }
 
 bool parse_unrecognized_token(const state& state) {
-  std::println("Error: unrecognized token \"{}\"", state.get_current_token());
+  std::println(std::cerr, "Error: unrecognized token \"{}\"", state.get_current_token());
   return false;
 }
 
@@ -112,7 +112,7 @@ bool parse_config(const std::string_view path, const std::string_view data) {
 
   while (!state.get_next_token().empty()) {
     if (const auto& parse{get_parser(state.get_current_token())}; !parse(state)) {
-      std::println("Error: \"{}\" is malformed", path);
+      std::println(std::cerr, "Error: \"{}\" is malformed", path);
       return false;
     }
   }

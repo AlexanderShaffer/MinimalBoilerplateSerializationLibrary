@@ -28,7 +28,7 @@ int main(const int argc, const char* const* const argv) {
     std::filesystem::path config_path{arg};
 
     if (!std::filesystem::exists(config_path) || std::filesystem::is_directory(config_path)) {
-      std::println("Error: \"{}\" is not a file that exists", arg);
+      std::println(std::cerr, "Error: \"{}\" is not a file that exists", arg);
       return 1;
     }
 
@@ -39,7 +39,7 @@ int main(const int argc, const char* const* const argv) {
     std::ifstream config_file{config_path, std::ios::binary};
 
     if (!config_file) {
-      std::println("Error: failed to open \"{}\"", config_path);
+      std::println(std::cerr, "Error: failed to open \"{}\"", config_path);
       return 1;
     }
 

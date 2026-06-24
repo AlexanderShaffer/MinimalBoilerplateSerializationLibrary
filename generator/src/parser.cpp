@@ -28,14 +28,13 @@ public:
   explicit state(const std::string_view config) : m_config{config} {}
 
   std::string_view get_next_token() {
-    constexpr std::string_view WHITESPACE_OR_COMMENT{"/ \r\n\t"};
+    constexpr std::string_view WHITESPACE{" \n\r\t"};
 
     do {
-      constexpr std::string_view WHITESPACE{WHITESPACE_OR_COMMENT.substr(1)};
       m_config.remove_prefix(std::min(m_config.find_first_not_of(WHITESPACE), m_config.size()));
-    } while (ignore_comment());
+    } while (ignore_comment("/*", "*/") || ignore_comment("//", "\n"));
 
-    m_token = {m_config.substr(0, std::min(m_config.find_first_of(WHITESPACE_OR_COMMENT), m_config.size()))};
+    m_token = {m_config.substr(0, std::min(m_config.find_first_of(WHITESPACE), m_config.size()))};
     m_config.remove_prefix(m_token.size());
     return m_token;
   }
@@ -46,15 +45,13 @@ private:
   std::string_view m_config{};
   std::string_view m_token{};
 
-  bool ignore_comment() {
-    if (constexpr std::string_view MULTILINE_COMMENT_START{"/*"}; !m_config.starts_with(MULTILINE_COMMENT_START)) {
+  bool ignore_comment(const std::string_view start_delimiter, const std::string_view end_delimiter) {
+    if (!m_config.starts_with(start_delimiter)) {
       return false;
     }
 
-    constexpr std::string_view MULTILINE_COMMENT_END{"*/"};
-    const auto end_pos{m_config.find(MULTILINE_COMMENT_END)};
-
-    m_config.remove_prefix(end_pos == std::string_view::npos ? m_config.size() : end_pos + MULTILINE_COMMENT_END.size());
+    const auto end_pos{m_config.find(end_delimiter)};
+    m_config.remove_prefix(end_pos == std::string_view::npos ? m_config.size() : end_pos + end_delimiter.size());
     return true;
   }
 };

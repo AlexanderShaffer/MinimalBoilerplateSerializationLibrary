@@ -23,6 +23,7 @@ namespace parser {
 namespace {
 class state {
 public:
+  std::string_view conduit_{"conduit"};
   std::string_view endianness_{"little"};
 
   explicit state(const std::string_view config) : m_config{config} {}
@@ -56,14 +57,20 @@ private:
   }
 };
 
-bool parse_endianness(state& state) {
+bool parse_assignment(state& state, const std::string_view name, std::string_view state::* const member) {
   if (state.get_next_token() != "=") {
-    std::println(std::cerr, "Error: expected the endianness to be defined using an \"=\" surrounded by whitespace");
+    std::println(std::cerr, "Error: expected the {} to be assigned using an \"=\" surrounded by whitespace", name);
     return false;
   }
 
-  state.endianness_ = state.get_next_token();
+  state.*member = state.get_next_token();
   return true;
+}
+
+using parser = std::function<bool(state&)>;
+
+std::pair<std::string_view, parser> create_assignment_parser(const std::string_view name, std::string_view state::* const member) {
+  return {name, [=](state& state) { return parse_assignment(state, name, member); }};
 }
 
 bool parse_struct(state& state) {
@@ -93,9 +100,9 @@ bool parse_unrecognized_token(const state& state) {
   return false;
 }
 
-const auto& get_parser(const std::string_view token) {
-  using parser = std::function<bool(state&)>;
-  static const std::unordered_map<std::string_view, parser> PARSERS{{"endianness", parse_endianness}, {"struct", parse_struct}};
+const parser& get_parser(const std::string_view token) {
+  static const std::unordered_map PARSERS{
+    create_assignment_parser("conduit", &state::conduit_), create_assignment_parser("endianness", &state::endianness_), {"struct", parse_struct}};
 
   if (const auto iterator{PARSERS.find(token)}; iterator != PARSERS.end()) {
     const auto& [_, parse]{*iterator};

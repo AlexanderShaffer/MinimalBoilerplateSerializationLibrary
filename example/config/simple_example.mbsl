@@ -16,12 +16,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-// Assigns the name of the conduit that contains all structs that follow. Each conduit has its own
-// validator and is intended to represent a medium (i.e. bluetooth or files). The default is conduit.
-conduit = example_conduit
+// Assigns the conduit of all structs that follow. The default is conduit.
+conduit example_conduit
 
 // Assigns the endianness of all structs that follow. Valid values are little, big, and native. The default is little.
-endianness = big
+endianness big
 
 // Defines a C++ struct in the mbsl namespace with automatically generated serialization and deserialization functions.
 struct example_struct {

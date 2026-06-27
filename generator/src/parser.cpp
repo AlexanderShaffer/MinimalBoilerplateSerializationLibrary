@@ -57,20 +57,13 @@ private:
   }
 };
 
-bool parse_assignment(state& state, const std::string_view name, std::string_view state::* const member) {
-  if (state.get_next_token() != "=") {
-    std::println(std::cerr, "Error: expected the {} to be assigned using an \"=\" surrounded by whitespace", name);
-    return false;
-  }
-
-  state.*member = state.get_next_token();
-  return true;
-}
-
 using parser = std::function<bool(state&)>;
 
 std::pair<std::string_view, parser> create_assignment_parser(const std::string_view name, std::string_view state::* const member) {
-  return {name, [=](state& state) { return parse_assignment(state, name, member); }};
+  return {name, [=](state& state){
+    state.*member = state.get_next_token();
+    return true;
+  }};
 }
 
 bool parse_struct(state& state) {

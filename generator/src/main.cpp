@@ -44,8 +44,13 @@ int main(const int argc, const char* const* const argv) {
     }
 
     config_file.read(config.data(), config.size());
-    std::string_view data{config.c_str(), static_cast<std::size_t>(config_file.gcount())};
-    parser::parse_config(config_path, data);
+
+    if (!parser::parse(std::string_view{config.c_str(), static_cast<std::size_t>(config_file.gcount())})) {
+      std::println(std::cerr, "Error: \"{}\" is malformed", config_path);
+      return 1;
+    }
+
+    std::println("Successfully parsed \"{}\"", config_path);
   }
 
   writer::write_library();

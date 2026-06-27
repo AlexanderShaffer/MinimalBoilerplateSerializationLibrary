@@ -60,10 +60,10 @@ private:
 using parser = std::function<bool(state&)>;
 
 std::pair<std::string_view, parser> create_assignment_parser(const std::string_view name, std::string_view state::* const member) {
-  return {name, [=](state& state){
-    state.*member = state.get_next_token();
-    return true;
-  }};
+  return {name, [=](state& state) {
+            state.*member = state.get_next_token();
+            return true;
+          }};
 }
 
 bool parse_struct(state& state) {
@@ -107,17 +107,15 @@ const parser& get_parser(const std::string_view token) {
 }
 } // namespace
 
-bool parse_config(const std::string_view path, const std::string_view data) {
-  state state{data};
+bool parse(const std::string_view config) {
+  state state{config};
 
   while (!state.get_next_token().empty()) {
     if (const auto& parse{get_parser(state.get_current_token())}; !parse(state)) {
-      std::println(std::cerr, "Error: \"{}\" is malformed", path);
       return false;
     }
   }
 
-  std::println("Generated source code from \"{}\"", path);
   return true;
 }
 } // namespace parser

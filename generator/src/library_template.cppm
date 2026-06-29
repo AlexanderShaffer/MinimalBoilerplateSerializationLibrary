@@ -47,6 +47,13 @@ import std;
 static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big, "Mixed endianness is unsupported");
 
 namespace mbsl {{
+namespace {{
+template<typename T>
+struct reflection_vendor {{
+  static consteval auto get_reflection();
+}};
+}} // namespace
+
 export {{{}}}
 
 namespace {{
@@ -54,13 +61,13 @@ template<typename T, template<typename> class Requirement>
 concept Number = (std::is_arithmetic_v<T> || std::is_enum_v<T>) && Requirement<T>::VALUE;
 
 template<typename T>
-concept StdArray = requires (T t) {{
+concept Array = requires (T t) {{
   requires std::same_as<T, std::array<typename T::value_type, t.size()>>;
   requires !t.empty();
 }};
 
 template<typename T, template<typename> class Requirement>
-concept EndiannessReaction = Number<T, Requirement> || (StdArray<T> && Number<typename T::value_type, Requirement>);
+concept EndiannessReaction = Number<T, Requirement> || (Array<T> && Number<typename T::value_type, Requirement>);
 
 template<typename T>
 struct is_size_one {{
@@ -118,16 +125,19 @@ struct region_parser<CurrentMember, NextMember, Members...> : region_parser<Next
     IsBefore<typename CurrentMember::type>::VALUE ? region_parser<NextMember, Members...>::template REGION_OFFSET<IsBefore> : CurrentMember::OFFSET}};
 }};
 
+template<class T, class Identifier>
+struct identification {{}};
+
 template<class Struct, std::endian ENDIANNESS, Member... Members>
-struct struct_register {{
-  template<typename T>
-  struct serializer;
-
-  template<>
-  struct serializer<Struct> : region_parser<Members...> {{}};
-
+struct struct_register : identification<struct_register<Struct, ENDIANNESS, Members...>, Struct>, region_parser<Members...> {{
   static constexpr auto REFLECTION_SIZE{{(sizeof...(Members) * 2) + 1}};
 
+  static consteval void create_reflection(const std::span<std::uint16_t> reflection, std::size_t& index) {{
+    ((set<Members::OFFSET>(reflection, index), set<sizeof(typename Members::type)>(reflection, index)), ...);
+    set<sizeof(Struct)>(reflection, index);
+  }}
+
+private:
   template<std::size_t VALUE>
   static consteval void set(const std::span<std::uint16_t> reflection, std::size_t& index) {{
     static_assert(VALUE <= std::numeric_limits<std::uint16_t>::max(),
@@ -136,15 +146,39 @@ struct struct_register {{
     const auto value{{static_cast<std::uint16_t>(VALUE)}};
     reflection[index++] = std::endian::native == std::endian::little ? value : std::byteswap(value);
   }}
+}};
 
-  static consteval void create_reflection(const std::span<std::uint16_t> reflection, std::size_t& index) {{
-    ((set<Members::OFFSET>(reflection, index), set<sizeof(typename Members::type)>(reflection, index)), ...);
-    set<sizeof(Struct)>(reflection, index);
+template<class T, class Identifier>
+concept MatchingIdentification = std::derived_from<T, identification<T, Identifier>>;
+
+template<class Vendor, class Identifier>
+concept SuitableVendor = !std::same_as<decltype(Vendor::template get<Identifier>()), void>;
+
+template<class... Ts>
+struct vendor : Ts... {{
+  template<class Identifier>
+  static consteval auto get() {{
+    return search<Identifier, Ts...>();
+  }}
+
+private:
+  template<class Identifier>
+  static consteval void search() {{}}
+
+  template<class Identifier, class U, class... Us>
+  static consteval auto search() {{
+    if constexpr (MatchingIdentification<U, Identifier>) {{
+      return U{{}};
+    }} else if constexpr (SuitableVendor<U, Identifier>) {{
+      return U::template get<Identifier>();
+    }} else {{
+      return search<Identifier, Us...>();
+    }}
   }}
 }};
 
-template<class... StructRegisters>
-struct conduit_register : StructRegisters... {{
+template<class Conduit, class... StructRegisters>
+struct conduit_register : identification<conduit_register<Conduit, StructRegisters...>, Conduit>, vendor<StructRegisters...> {{
   static consteval auto create_reflection() {{
     std::array<std::uint16_t, (StructRegisters::REFLECTION_SIZE + ...)> reflection{{}};
     std::size_t index{{}};
@@ -154,7 +188,7 @@ struct conduit_register : StructRegisters... {{
   }}
 }};
 
-using registry = conduit_register<{}
+using registry = vendor<{}
 >;
 
 template<typename T, std::integral CurrentIntegral, std::integral... Integrals>
@@ -178,7 +212,7 @@ void swap_bytes(const size_t offset, const auto& in, auto& out) {{
 
 template<typename Member>
 void swap_bytes_if_endianness_susceptible(const auto& in, auto& out) {{
-  if constexpr (StdArray<typename Member::type> && EndiannessSusceptible<typename Member::type>) {{
+  if constexpr (Array<typename Member::type> && EndiannessSusceptible<typename Member::type>) {{
     for (size_t i{{}}; i < sizeof(typename Member::type); i += sizeof(typename Member::type::value_type)) {{
       swap_bytes<typename Member::type::value_type>(Member::OFFSET + i, in, out);
     }}
@@ -187,6 +221,13 @@ void swap_bytes_if_endianness_susceptible(const auto& in, auto& out) {{
   }}
 }}
 }} // namespace
+
+export {{
+template<class Conduit>
+consteval auto reflection_vendor<Conduit>::get_reflection() {{
+  return registry::get<Conduit>().create_reflection();
+}}
+}}
 }} // namespace mbsl
 )"};
 } // namespace library_template

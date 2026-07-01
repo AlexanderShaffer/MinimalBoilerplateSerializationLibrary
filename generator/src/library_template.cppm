@@ -47,14 +47,12 @@ import std;
 static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big, "Mixed endianness is unsupported");
 
 namespace mbsl {{
-namespace {{
+export {{
 template<typename T>
 struct reflection_vendor {{
   static consteval auto get_reflection();
 }};
-}} // namespace
-
-export {{{}}}
+{}}}
 
 namespace {{
 template<typename T, template<typename> class Requirement>
@@ -125,11 +123,8 @@ struct region_parser<CurrentMember, NextMember, Members...> : region_parser<Next
     IsBefore<typename CurrentMember::type>::VALUE ? region_parser<NextMember, Members...>::template REGION_OFFSET<IsBefore> : CurrentMember::OFFSET}};
 }};
 
-template<class T, class Identifier>
-struct identification {{}};
-
 template<class Struct, std::endian ENDIANNESS, Member... Members>
-struct struct_register : identification<struct_register<Struct, ENDIANNESS, Members...>, Struct>, region_parser<Members...> {{
+struct struct_register : std::type_identity<Struct>, region_parser<Members...> {{
   static constexpr auto REFLECTION_SIZE{{(sizeof...(Members) * 2) + 1}};
 
   static consteval void create_reflection(const std::span<std::uint16_t> reflection, std::size_t& index) {{
@@ -148,37 +143,37 @@ private:
   }}
 }};
 
+template<class... Ts>
+struct vendor;
+
+template<>
+struct vendor<> {{
+  template<class Identifier>
+  static consteval void get() {{}}
+}};
+
 template<class T, class Identifier>
-concept MatchingIdentification = std::derived_from<T, identification<T, Identifier>>;
+concept MatchingIdentifier = std::derived_from<T, std::type_identity<Identifier>>;
 
 template<class Vendor, class Identifier>
 concept SuitableVendor = !std::same_as<decltype(Vendor::template get<Identifier>()), void>;
 
-template<class... Ts>
-struct vendor : Ts... {{
+template<class T, class... Ts>
+struct vendor<T, Ts...> {{
   template<class Identifier>
   static consteval auto get() {{
-    return search<Identifier, Ts...>();
-  }}
-
-private:
-  template<class Identifier>
-  static consteval void search() {{}}
-
-  template<class Identifier, class U, class... Us>
-  static consteval auto search() {{
-    if constexpr (MatchingIdentification<U, Identifier>) {{
-      return U{{}};
-    }} else if constexpr (SuitableVendor<U, Identifier>) {{
-      return U::template get<Identifier>();
+    if constexpr (MatchingIdentifier<T, Identifier>) {{
+      return T{{}};
+    }} else if constexpr (SuitableVendor<T, Identifier>) {{
+      return T::template get<Identifier>();
     }} else {{
-      return search<Identifier, Us...>();
+      return vendor<Ts...>::template get<Identifier>();
     }}
   }}
 }};
 
 template<class Conduit, class... StructRegisters>
-struct conduit_register : identification<conduit_register<Conduit, StructRegisters...>, Conduit>, vendor<StructRegisters...> {{
+struct conduit_register : std::type_identity<Conduit>, vendor<StructRegisters...> {{
   static consteval auto create_reflection() {{
     std::array<std::uint16_t, (StructRegisters::REFLECTION_SIZE + ...)> reflection{{}};
     std::size_t index{{}};
@@ -222,11 +217,9 @@ void swap_bytes_if_endianness_susceptible(const auto& in, auto& out) {{
 }}
 }} // namespace
 
-export {{
 template<class Conduit>
 consteval auto reflection_vendor<Conduit>::get_reflection() {{
   return registry::get<Conduit>().create_reflection();
-}}
 }}
 }} // namespace mbsl
 )"};

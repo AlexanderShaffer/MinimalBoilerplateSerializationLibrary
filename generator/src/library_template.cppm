@@ -186,6 +186,8 @@ struct conduit_register : std::type_identity<Conduit>, vendor<StructRegisters...
 using registry = vendor<{}
 >;
 
+static_assert(requires {{ registry::get<void>(); }}, "Failed to initialize the registry");
+
 template<typename T, std::integral CurrentIntegral, std::integral... Integrals>
 void swap_bytes(const auto& in, auto& out) {{
   if constexpr (sizeof(T) == sizeof(CurrentIntegral)) {{

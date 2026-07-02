@@ -98,8 +98,14 @@ struct member {{
 template<typename T>
 concept Member = std::same_as<T, member<typename T::type, T::OFFSET>>;
 
-template<Member CurrentMember, Member... Members>
+template<Member... Members>
 struct region_parser;
+
+template<>
+struct region_parser<> {{
+  template<template<typename> class IsBefore>
+  static constexpr std::size_t REGION_OFFSET{{0}};
+}};
 
 template<Member Member>
 struct region_parser<Member> {{

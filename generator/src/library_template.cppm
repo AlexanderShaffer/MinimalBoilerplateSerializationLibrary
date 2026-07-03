@@ -178,7 +178,7 @@ struct vendor<T, Ts...> {{
   }}
 }};
 
-template<class Conduit, class... StructRegisters>
+template<class Conduit, std::uint16_t VERSION, class... StructRegisters>
 struct conduit_register : std::type_identity<Conduit>, vendor<StructRegisters...> {{
   static consteval auto create_reflection() {{
     std::array<std::uint16_t, (StructRegisters::REFLECTION_SIZE + ...)> reflection{{}};

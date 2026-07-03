@@ -24,6 +24,7 @@ namespace {
 class state {
 public:
   std::string_view conduit_{"conduit"};
+  std::string_view version_{"0"};
   std::string_view endianness_{"little"};
 
   explicit state(const std::string_view config) : m_config{config} {}
@@ -94,8 +95,10 @@ bool parse_unrecognized_token(const state& state) {
 }
 
 const parser& get_parser(const std::string_view token) {
-  static const std::unordered_map PARSERS{
-    create_assignment_parser("conduit", &state::conduit_), create_assignment_parser("endianness", &state::endianness_), {"struct", parse_struct}};
+  static const std::unordered_map PARSERS{create_assignment_parser("conduit", &state::conduit_),
+                                          create_assignment_parser("version", &state::version_),
+                                          create_assignment_parser("endianness", &state::endianness_),
+                                          {"struct", parse_struct}};
 
   if (const auto iterator{PARSERS.find(token)}; iterator != PARSERS.end()) {
     const auto& [_, parse]{*iterator};

@@ -19,6 +19,9 @@
 // Assigns the conduit of all structs that follow. The default is conduit.
 conduit example_conduit
 
+// Assigns the version of all structs that follow. The version must be a 16-bit integer. The default is 0.
+version 0
+
 // Assigns the endianness of all structs that follow. Valid values are little, big, and native. The default is little.
 endianness big
 

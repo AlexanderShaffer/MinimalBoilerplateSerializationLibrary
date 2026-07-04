@@ -48,7 +48,7 @@ static_assert(std::endian::native == std::endian::little || std::endian::native 
 
 namespace mbsl {{
 export {{
-template<typename T>
+template<typename>
 struct reflection_vendor {{
   static consteval auto get_reflection();
 }};
@@ -56,49 +56,39 @@ struct reflection_vendor {{
 
 namespace {{
 template<typename T, template<typename> class Requirement>
-concept Number = (std::is_arithmetic_v<T> || std::is_enum_v<T>) && Requirement<T>::VALUE;
+concept number = (std::is_arithmetic_v<T> || std::is_enum_v<T>) && Requirement<T>::value;
 
-template<typename T>
-concept Array = requires (T t) {{
-  requires std::same_as<T, std::array<typename T::value_type, t.size()>>;
-  requires !t.empty();
-}};
+template<class T, template<typename, std::size_t> class Template>
+concept instance_of = requires (T t) {{ Template(t); }};
 
 template<typename T, template<typename> class Requirement>
-concept EndiannessReaction = Number<T, Requirement> || (Array<T> && Number<typename T::value_type, Requirement>);
+concept endianness_reaction = number<T, Requirement> || (instance_of<T, std::array> && number<typename T::value_type, Requirement>);
 
 template<typename T>
-struct is_size_one {{
-  static constexpr bool VALUE{{sizeof(T) == 1}};
-}};
+struct is_size_one : std::bool_constant<sizeof(T) == 1> {{}};
 
 template<typename T>
-concept EndiannessResistant = EndiannessReaction<T, is_size_one>;
+concept endianness_resistant = endianness_reaction<T, is_size_one>;
 
 template<typename T>
-struct not_size_one {{
-  static constexpr bool VALUE{{sizeof(T) != 1}};
-}};
+struct not_size_one : std::bool_constant<sizeof(T) != 1> {{}};
 
 template<typename T>
-concept EndiannessSusceptible = EndiannessReaction<T, not_size_one>;
+concept endianness_susceptible = endianness_reaction<T, not_size_one>;
 
 template<typename T>
-concept Noncontiguous = false; // TODO: Implement this concept
+concept noncontiguous = false; // TODO: Implement this concept
 
 template<typename T>
-concept MemberType = EndiannessResistant<T> || EndiannessSusceptible<T> || Noncontiguous<T>;
+concept member_type = endianness_resistant<T> || endianness_susceptible<T> || noncontiguous<T>;
 
-template<MemberType MemberType, size_t MEMBER_OFFSET>
+template<member_type MemberType, size_t MEMBER_OFFSET>
 struct member {{
   using type = MemberType;
   static constexpr auto OFFSET{{MEMBER_OFFSET}};
 }};
 
-template<typename T>
-concept Member = std::same_as<T, member<typename T::type, T::OFFSET>>;
-
-template<Member... Members>
+template<instance_of<member>... Members>
 struct region_parser;
 
 template<>
@@ -107,21 +97,21 @@ struct region_parser<> {{
   static constexpr std::size_t REGION_OFFSET{{0}};
 }};
 
-template<Member Member>
+template<instance_of<member> Member>
 struct region_parser<Member> {{
   template<template<typename> class IsBefore>
   static constexpr auto REGION_OFFSET{{Member::OFFSET + (IsBefore<typename Member::type>::VALUE ? sizeof(typename Member::type) : 0)}};
 }};
 
-template<Member CurrentMember, Member NextMember, Member... Members>
+template<instance_of<member> CurrentMember, instance_of<member> NextMember, instance_of<member>... Members>
 struct region_parser<CurrentMember, NextMember, Members...> : region_parser<NextMember, Members...> {{
-  static_assert(!EndiannessSusceptible<typename CurrentMember::type> || !Noncontiguous<typename NextMember::type>,
+  static_assert(!endianness_susceptible<typename CurrentMember::type> || !noncontiguous<typename NextMember::type>,
                 "Noncontiguous members must precede endianness susceptible members");
 
-  static_assert(!EndiannessResistant<typename CurrentMember::type> || !Noncontiguous<typename NextMember::type>,
+  static_assert(!endianness_resistant<typename CurrentMember::type> || !noncontiguous<typename NextMember::type>,
                 "Noncontiguous members must precede endianness resistant members");
 
-  static_assert(!EndiannessResistant<typename CurrentMember::type> || !EndiannessSusceptible<typename NextMember::type>,
+  static_assert(!endianness_resistant<typename CurrentMember::type> || !endianness_susceptible<typename NextMember::type>,
                 "Endianness susceptible members must precede endianness resistant members");
 
   template<template<typename> class IsBefore>
@@ -129,7 +119,7 @@ struct region_parser<CurrentMember, NextMember, Members...> : region_parser<Next
     IsBefore<typename CurrentMember::type>::VALUE ? region_parser<NextMember, Members...>::template REGION_OFFSET<IsBefore> : CurrentMember::OFFSET}};
 }};
 
-template<class Struct, std::endian ENDIANNESS, Member... Members>
+template<class Struct, std::endian ENDIANNESS, instance_of<member>... Members>
 struct struct_register : std::type_identity<Struct>, region_parser<Members...> {{
   static constexpr auto REFLECTION_SIZE{{(sizeof...(Members) * 2) + 1}};
 
@@ -154,23 +144,23 @@ struct vendor;
 
 template<>
 struct vendor<> {{
-  template<class Identifier>
+  template<class>
   static consteval void get() {{}}
 }};
 
 template<class T, class Identifier>
-concept MatchingIdentifier = std::derived_from<T, std::type_identity<Identifier>>;
+concept matching_identifier = std::derived_from<T, std::type_identity<Identifier>>;
 
 template<class Vendor, class Identifier>
-concept SuitableVendor = !std::same_as<decltype(Vendor::template get<Identifier>()), void>;
+concept suitable_vendor = !std::same_as<decltype(Vendor::template get<Identifier>()), void>;
 
 template<class T, class... Ts>
 struct vendor<T, Ts...> {{
   template<class Identifier>
   static consteval auto get() {{
-    if constexpr (MatchingIdentifier<T, Identifier>) {{
+    if constexpr (matching_identifier<T, Identifier>) {{
       return T{{}};
-    }} else if constexpr (SuitableVendor<T, Identifier>) {{
+    }} else if constexpr (suitable_vendor<T, Identifier>) {{
       return T::template get<Identifier>();
     }} else {{
       return vendor<Ts...>::template get<Identifier>();
@@ -213,13 +203,13 @@ void swap_bytes(const size_t offset, const auto& in, auto& out) {{
   swap_bytes<T, std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t>(in_pos, out_pos);
 }}
 
-template<typename Member>
+template<instance_of<member> Member>
 void swap_bytes_if_endianness_susceptible(const auto& in, auto& out) {{
-  if constexpr (Array<typename Member::type> && EndiannessSusceptible<typename Member::type>) {{
+  if constexpr (instance_of<typename Member::type, std::array> && endianness_susceptible<typename Member::type>) {{
     for (size_t i{{}}; i < sizeof(typename Member::type); i += sizeof(typename Member::type::value_type)) {{
       swap_bytes<typename Member::type::value_type>(Member::OFFSET + i, in, out);
     }}
-  }} else if constexpr (EndiannessSusceptible<typename Member::type>) {{
+  }} else if constexpr (endianness_susceptible<typename Member::type>) {{
     swap_bytes<typename Member::type>(Member::OFFSET, in, out);
   }}
 }}

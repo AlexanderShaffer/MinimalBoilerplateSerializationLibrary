@@ -55,38 +55,23 @@ struct reflection_vendor {{
 {}}}
 
 namespace {{
-template<typename T, template<typename> class Requirement>
-concept number = (std::is_arithmetic_v<T> || std::is_enum_v<T>) && Requirement<T>::value;
-
-template<class T, template<typename, std::size_t> class Template>
-concept instance_of = requires (T t) {{ Template(t); }};
-
-template<typename T, template<typename> class Requirement>
-concept endianness_reaction = number<T, Requirement> || (instance_of<T, std::array> && number<typename T::value_type, Requirement>);
+template<typename T>
+concept endianness_resistant = std::is_trivially_copyable_v<T> && alignof(T) == 1;
 
 template<typename T>
-struct is_size_one : std::bool_constant<sizeof(T) == 1> {{}};
-
-template<typename T>
-concept endianness_resistant = endianness_reaction<T, is_size_one>;
-
-template<typename T>
-struct not_size_one : std::bool_constant<sizeof(T) != 1> {{}};
-
-template<typename T>
-concept endianness_susceptible = endianness_reaction<T, not_size_one>;
+concept endianness_susceptible = std::is_trivially_copyable_v<T> && !std::is_pointer_v<T> && !std::is_member_pointer_v<T> && alignof(T) > 1;
 
 template<typename T>
 concept noncontiguous = false; // TODO: Implement this concept
 
-template<typename T>
-concept member_type = endianness_resistant<T> || endianness_susceptible<T> || noncontiguous<T>;
-
-template<member_type MemberType, size_t MEMBER_OFFSET>
-struct member {{
-  using type = MemberType;
+template<typename T, size_t MEMBER_OFFSET>
+requires endianness_resistant<T> || endianness_susceptible<T> || noncontiguous<T>
+struct member : std::type_identity<T> {{
   static constexpr auto OFFSET{{MEMBER_OFFSET}};
 }};
+
+template<typename T, template<typename, std::size_t> class Template>
+concept instance_of = requires (T t) {{ Template(t); }};
 
 template<instance_of<member>... Members>
 struct region_parser;
@@ -203,6 +188,7 @@ void swap_bytes(const size_t offset, const auto& in, auto& out) {{
   swap_bytes<T, std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t>(in_pos, out_pos);
 }}
 
+// TODO: disallow endianness susceptible class types and allow multidimensional arrays
 template<instance_of<member> Member>
 void swap_bytes_if_endianness_susceptible(const auto& in, auto& out) {{
   if constexpr (instance_of<typename Member::type, std::array> && endianness_susceptible<typename Member::type>) {{

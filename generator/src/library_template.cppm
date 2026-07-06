@@ -106,8 +106,7 @@ private:
     }}() && ...);
   }}
 
-  template<template<typename> class IsBeforeOffset>
-  static consteval std::size_t find_region_offset() {{
+  static consteval std::size_t find_region_offset(const auto is_before_offset) {{
     static_assert(is_valid_member_order(), "Struct members must follow the order: noncontiguous, endianness susceptible, and endianness resistant");
     std::size_t offset{{}};
     std::size_t size{{}};
@@ -115,7 +114,7 @@ private:
     const bool last_member_is_before_offset{{([&] {{
       offset = Members::OFFSET;
       size = sizeof(typename Members::type);
-      return IsBeforeOffset<typename Members::type>::value;
+      return is_before_offset.template operator()<typename Members::type>();
     }}() && ...)}};
 
     return last_member_is_before_offset ? offset + size : offset;

@@ -56,16 +56,16 @@ struct reflection_vendor {{
 
 namespace {{
 template<typename T>
-concept endianness_resistant = std::is_trivially_copyable_v<T> && alignof(T) == 1;
+concept noncontiguous = false; // TODO: Implement this concept
 
 template<typename T>
 concept endianness_susceptible = std::is_trivially_copyable_v<T> && !std::is_pointer_v<T> && !std::is_member_pointer_v<T> && alignof(T) > 1;
 
 template<typename T>
-concept noncontiguous = false; // TODO: Implement this concept
+concept endianness_resistant = std::is_trivially_copyable_v<T> && alignof(T) == 1;
 
 template<typename T, size_t MEMBER_OFFSET>
-requires endianness_resistant<T> || endianness_susceptible<T> || noncontiguous<T>
+requires noncontiguous<T> || endianness_susceptible<T> || endianness_resistant<T>
 struct member : std::type_identity<T> {{
   static constexpr auto OFFSET{{MEMBER_OFFSET}};
 }};
@@ -73,39 +73,8 @@ struct member : std::type_identity<T> {{
 template<typename T, template<typename, std::size_t> class Template>
 concept instance_of = requires (T t) {{ Template(t); }};
 
-template<instance_of<member>... Members>
-struct region_parser;
-
-template<>
-struct region_parser<> {{
-  template<template<typename> class IsBefore>
-  static constexpr std::size_t REGION_OFFSET{{0}};
-}};
-
-template<instance_of<member> Member>
-struct region_parser<Member> {{
-  template<template<typename> class IsBefore>
-  static constexpr auto REGION_OFFSET{{Member::OFFSET + (IsBefore<typename Member::type>::VALUE ? sizeof(typename Member::type) : 0)}};
-}};
-
-template<instance_of<member> CurrentMember, instance_of<member> NextMember, instance_of<member>... Members>
-struct region_parser<CurrentMember, NextMember, Members...> : region_parser<NextMember, Members...> {{
-  static_assert(!endianness_susceptible<typename CurrentMember::type> || !noncontiguous<typename NextMember::type>,
-                "Noncontiguous members must precede endianness susceptible members");
-
-  static_assert(!endianness_resistant<typename CurrentMember::type> || !noncontiguous<typename NextMember::type>,
-                "Noncontiguous members must precede endianness resistant members");
-
-  static_assert(!endianness_resistant<typename CurrentMember::type> || !endianness_susceptible<typename NextMember::type>,
-                "Endianness susceptible members must precede endianness resistant members");
-
-  template<template<typename> class IsBefore>
-  static constexpr auto REGION_OFFSET{{
-    IsBefore<typename CurrentMember::type>::VALUE ? region_parser<NextMember, Members...>::template REGION_OFFSET<IsBefore> : CurrentMember::OFFSET}};
-}};
-
 template<class Struct, std::endian ENDIANNESS, instance_of<member>... Members>
-struct struct_register : std::type_identity<Struct>, region_parser<Members...> {{
+struct struct_register : std::type_identity<Struct> {{
   static constexpr auto REFLECTION_SIZE{{(sizeof...(Members) * 2) + 1}};
 
   static consteval void create_reflection(const std::span<std::uint16_t> reflection, std::size_t& index) {{
@@ -121,6 +90,35 @@ private:
 
     const auto value{{static_cast<std::uint16_t>(VALUE)}};
     reflection[index++] = std::endian::native == std::endian::little ? value : std::byteswap(value);
+  }}
+
+  static consteval bool is_valid_member_order() {{
+    bool inside_endianness_susceptible_region{{}};
+    bool inside_endianness_resistant_region{{}};
+
+    return ([&] {{
+      const bool valid_endianness_susceptible_region{{!inside_endianness_susceptible_region || !noncontiguous<typename Members::type>}};
+      const bool valid_endianness_resistant_region{{!inside_endianness_resistant_region || endianness_resistant<typename Members::type>}};
+
+      inside_endianness_susceptible_region = endianness_susceptible<typename Members::type>;
+      inside_endianness_resistant_region = endianness_resistant<typename Members::type>;
+      return valid_endianness_susceptible_region && valid_endianness_resistant_region;
+    }}() && ...);
+  }}
+
+  template<template<typename> class IsBeforeOffset>
+  static consteval std::size_t find_region_offset() {{
+    static_assert(is_valid_member_order(), "Struct members must follow the order: noncontiguous, endianness susceptible, and endianness resistant");
+    std::size_t offset{{}};
+    std::size_t size{{}};
+
+    const bool last_member_is_before_offset{{([&] {{
+      offset = Members::OFFSET;
+      size = sizeof(typename Members::type);
+      return IsBeforeOffset<typename Members::type>::value;
+    }}() && ...)}};
+
+    return last_member_is_before_offset ? offset + size : offset;
   }}
 }};
 

@@ -121,33 +121,25 @@ private:
   }}
 }};
 
-template<class... Ts>
-struct vendor;
-
-template<>
-struct vendor<> {{
-  template<class>
-  static consteval void get() {{}}
-}};
-
-template<class T, class Identifier>
-concept matching_identifier = std::derived_from<T, std::type_identity<Identifier>>;
-
-template<class Vendor, class Identifier>
-concept suitable_vendor = !std::same_as<decltype(Vendor::template get<Identifier>()), void>;
+template<class...>
+struct vendor {{}};
 
 template<class T, class... Ts>
 struct vendor<T, Ts...> {{
   template<class Identifier>
-  static consteval auto get() {{
-    if constexpr (matching_identifier<T, Identifier>) {{
+  static consteval auto find_type_linked_to() {{
+    if constexpr (std::derived_from<T, std::type_identity<Identifier>>) {{
       return T{{}};
-    }} else if constexpr (suitable_vendor<T, Identifier>) {{
-      return T::template get<Identifier>();
-    }} else {{
-      return vendor<Ts...>::template get<Identifier>();
+    }} else if constexpr (requires {{ typename T::template get<Identifier>; }}) {{
+      return typename T::template get<Identifier>{{}};
+    }} else if constexpr (sizeof...(Ts) > 0) {{
+      return vendor<Ts...>::template find_type_linked_to<Identifier>();
     }}
   }}
+
+  template<class Identifier>
+  requires (!std::is_void_v<decltype(find_type_linked_to<Identifier>())>)
+  using get = decltype(find_type_linked_to<Identifier>());
 }};
 
 template<class Conduit, std::uint16_t VERSION, class... StructRegisters>
@@ -163,8 +155,6 @@ struct conduit_register : std::type_identity<Conduit>, vendor<StructRegisters...
 
 using registry = vendor<{}
 >;
-
-static_assert(requires {{ registry::get<void>(); }}, "Failed to initialize the registry");
 
 template<typename T, std::integral CurrentIntegral, std::integral... Integrals>
 void swap_bytes(const auto& in, auto& out) {{
@@ -200,7 +190,7 @@ void swap_bytes_if_endianness_susceptible(const auto& in, auto& out) {{
 
 template<class Conduit>
 consteval auto reflection_vendor<Conduit>::get_reflection() {{
-  return registry::get<Conduit>().create_reflection();
+  return registry::get<Conduit>::create_reflection();
 }}
 }} // namespace mbsl
 )"};

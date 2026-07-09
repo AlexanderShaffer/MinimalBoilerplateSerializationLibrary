@@ -21,29 +21,24 @@ import library_template;
 
 namespace writer {
 namespace {
-std::string g_struct_definitions{};
-std::string g_struct_registers{};
-bool g_first_struct{true};
+struct conduit {
+  std::string version_{};
+  std::flat_map<std::string, std::string> structs_{};
+};
+
+std::unordered_map<std::string, conduit> g_conduits{};
 } // namespace
 
-struct_block::struct_block(const std::string_view name, const std::string_view endianness) : m_name{name} {
-  g_struct_definitions += std::format("\nstruct {} {{\n", name);
-  g_struct_registers += std::format("{}  struct_register<{}, std::endian::{}", g_first_struct ? "\n" : ",\n", name, endianness);
-}
+struct_block struct_block::create(const std::string_view struct_name, const properties& properties) { return struct_block{struct_name}; }
 
-struct_block::~struct_block() {
-  g_struct_definitions += "};\n";
-  g_struct_registers += ">";
-  g_first_struct = false;
-}
+struct_block::struct_block(const std::string_view name) : m_name{name} {}
 
-void struct_block::add_member(const std::string_view type, const std::string_view name) {
-  g_struct_definitions += std::format("  {} {}{{}};\n", type, name);
-  g_struct_registers += std::format(", member<{}, offsetof({}, {})>", type, m_name, name);
-}
+struct_block::~struct_block() {}
+
+void struct_block::add_member(const std::string_view type, const std::string_view name) {}
 
 void write_library() {
   std::ofstream out{"mbsl.cppm"};
-  std::print(out, library_template::FORMAT_STRING, g_struct_definitions, g_struct_registers);
+  std::print(out, library_template::FORMAT_STRING, "", "");
 }
 } // namespace writer

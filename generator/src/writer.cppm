@@ -20,9 +20,16 @@ export module writer;
 import std;
 
 export namespace writer {
+struct properties {
+  std::string_view name_{"conduit"};
+  std::string_view version_{"0"};
+  std::string_view endianness_{"little"};
+};
+
 class struct_block {
 public:
-  struct_block(std::string_view name, std::string_view endianness);
+  static struct_block create(std::string_view struct_name, const properties& properties);
+
   ~struct_block();
   struct_block(const struct_block& other) = delete;
   struct_block(struct_block&& other) = delete;
@@ -33,6 +40,8 @@ public:
 
 private:
   std::string_view m_name{};
+
+  explicit struct_block(std::string_view name);
 };
 
 void write_library();

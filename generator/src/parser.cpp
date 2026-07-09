@@ -23,9 +23,7 @@ namespace parser {
 namespace {
 class state {
 public:
-  std::string_view conduit_{"conduit"};
-  std::string_view version_{"0"};
-  std::string_view endianness_{"little"};
+  writer::properties properties_{};
 
   explicit state(const std::string_view config) : m_config{config} {}
 
@@ -60,15 +58,15 @@ private:
 
 using parser = std::function<bool(state&)>;
 
-std::pair<std::string_view, parser> create_assignment_parser(const std::string_view name, std::string_view state::* const member) {
+std::pair<std::string_view, parser> create_assignment_parser(const std::string_view name, std::string_view writer::properties::* const member) {
   return {name, [=](state& state) {
-            state.*member = state.get_next_token();
+            state.properties_.*member = state.get_next_token();
             return true;
           }};
 }
 
 bool parse_struct(state& state) {
-  writer::struct_block struct_block{state.get_next_token(), state.endianness_};
+  auto struct_block{writer::struct_block::create(state.get_next_token(), state.properties_)};
 
   if (constexpr std::string_view START{"{"}; state.get_next_token() != START) {
     std::println(std::cerr, "Error: a struct definition must begin with a \"{}\" surrounded by whitespace", START);
@@ -95,9 +93,9 @@ bool parse_unrecognized_token(const state& state) {
 }
 
 const parser& get_parser(const std::string_view token) {
-  static const std::unordered_map PARSERS{create_assignment_parser("conduit", &state::conduit_),
-                                          create_assignment_parser("version", &state::version_),
-                                          create_assignment_parser("endianness", &state::endianness_),
+  static const std::unordered_map PARSERS{create_assignment_parser("conduit", &writer::properties::name_),
+                                          create_assignment_parser("version", &writer::properties::version_),
+                                          create_assignment_parser("endianness", &writer::properties::endianness_),
                                           {"struct", parse_struct}};
 
   if (const auto iterator{PARSERS.find(token)}; iterator != PARSERS.end()) {

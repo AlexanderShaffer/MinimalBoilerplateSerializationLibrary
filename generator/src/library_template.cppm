@@ -46,14 +46,14 @@ import std;
 
 static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big, "Mixed endianness is unsupported");
 
-namespace mbsl {{
-export {{
-template<typename>
+export namespace mbsl {{
+template<class>
 struct reflection_vendor {{
   static consteval auto get_reflection();
 }};
-{}}}
+{}}} // namespace mbsl
 
+namespace mbsl {{
 namespace {{
 template<typename T>
 concept noncontiguous = false; // TODO: Implement this concept
@@ -73,25 +73,25 @@ struct member : std::type_identity<T> {{
 template<typename T, template<typename, std::size_t> class Template>
 concept instance_of = requires (T t) {{ Template(t); }};
 
+template<std::size_t VALUE>
+consteval void set(std::size_t& index, const std::span<std::uint16_t> reflection) {{
+  static_assert(VALUE <= std::numeric_limits<std::uint16_t>::max(), "All values in a reflection must be at most the 16-bit unsigned integer limit");
+
+  if (const auto value{{static_cast<std::uint16_t>(VALUE)}}; index < reflection.size()) {{
+    reflection[index] = std::endian::native == std::endian::little ? value : std::byteswap(value);
+  }}
+
+  index++;
+}}
+
 template<class Struct, std::endian ENDIANNESS, instance_of<member>... Members>
 struct struct_register : std::type_identity<Struct> {{
-  static constexpr auto REFLECTION_SIZE{{(sizeof...(Members) * 2) + 1}};
-
-  static consteval void create_reflection(const std::span<std::uint16_t> reflection, std::size_t& index) {{
-    ((set<Members::OFFSET>(reflection, index), set<sizeof(typename Members::type)>(reflection, index)), ...);
-    set<sizeof(Struct)>(reflection, index);
+  static consteval void build_reflection(std::size_t& index, const std::span<std::uint16_t> reflection) {{
+    ((set<Members::OFFSET>(index, reflection), set<sizeof(typename Members::type)>(index, reflection)), ...);
+    set<sizeof(Struct)>(index, reflection);
   }}
 
 private:
-  template<std::size_t VALUE>
-  static consteval void set(const std::span<std::uint16_t> reflection, std::size_t& index) {{
-    static_assert(VALUE <= std::numeric_limits<std::uint16_t>::max(),
-                  "Registered structs must have member offsets and sizes that are at most the 16-bit unsigned integer limit");
-
-    const auto value{{static_cast<std::uint16_t>(VALUE)}};
-    reflection[index++] = std::endian::native == std::endian::little ? value : std::byteswap(value);
-  }}
-
   static consteval bool is_valid_member_order() {{
     bool inside_endianness_susceptible_region{{}};
     bool inside_endianness_resistant_region{{}};
@@ -144,12 +144,22 @@ struct vendor<T, Ts...> {{
 
 template<class Conduit, std::uint16_t VERSION, class... StructRegisters>
 struct conduit_register : std::type_identity<Conduit>, vendor<StructRegisters...> {{
-  static consteval auto create_reflection() {{
-    std::array<std::uint16_t, (StructRegisters::REFLECTION_SIZE + ...)> reflection{{}};
-    std::size_t index{{}};
+  static consteval auto get_reflection() {{
+    constexpr auto REFLECTION_SIZE{{build_reflection()}};
 
-    (StructRegisters::create_reflection(reflection, index), ...);
+    std::array<std::uint16_t, REFLECTION_SIZE> reflection{{}};
+    build_reflection<REFLECTION_SIZE>(reflection);
     return reflection;
+  }}
+
+private:
+  template<std::size_t REFLECTION_SIZE = 0>
+  static consteval std::size_t build_reflection(const std::span<std::uint16_t> reflection = {{}}) {{
+    std::size_t index{{}};
+    set<REFLECTION_SIZE>(index, reflection);
+    set<VERSION>(index, reflection);
+    (StructRegisters::build_reflection(index, reflection), ...);
+    return index;
   }}
 }};
 
@@ -190,7 +200,7 @@ void swap_bytes_if_endianness_susceptible(const auto& in, auto& out) {{
 
 template<class Conduit>
 consteval auto reflection_vendor<Conduit>::get_reflection() {{
-  return registry::get<Conduit>::create_reflection();
+  return registry::get<Conduit>::get_reflection();
 }}
 }} // namespace mbsl
 )"};

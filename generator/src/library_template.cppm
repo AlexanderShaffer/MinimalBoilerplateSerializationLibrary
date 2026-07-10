@@ -129,11 +129,8 @@ private:
   }}
 }};
 
-template<class...>
-struct vendor {{}};
-
-template<class T, class... Ts>
-struct vendor<T, Ts...> {{
+template<class T = void, class... Ts>
+struct vendor {{
   template<class Identifier>
   static consteval auto find_type_linked_to() {{
     if constexpr (std::derived_from<T, std::type_identity<Identifier>>) {{

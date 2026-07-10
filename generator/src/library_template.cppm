@@ -73,22 +73,30 @@ struct member : std::type_identity<T> {{
 template<typename T, template<typename, std::size_t> class Template>
 concept instance_of = requires (T t) {{ Template(t); }};
 
-template<std::size_t VALUE>
-consteval void set(std::size_t& index, const std::span<std::uint16_t> reflection) {{
-  static_assert(VALUE <= std::numeric_limits<std::uint16_t>::max(), "All values in a reflection must be at most the 16-bit unsigned integer limit");
+template<std::size_t... VALUES>
+consteval void compress_losslessly_and_push(const std::optional<std::span<std::uint8_t>> reflection, std::size_t& size) {{
+  for (const auto value : {{VALUES...}}) {{
+    const auto big_endian_value{{std::endian::native == std::endian::little ? std::byteswap(value) : value}};
+    const auto bytes{{std::bit_cast<std::array<std::uint8_t, sizeof(big_endian_value)>>(big_endian_value)}};
+    std::span<const std::uint8_t> remaining_bytes{{bytes}};
 
-  if (const auto value{{static_cast<std::uint16_t>(VALUE)}}; index < reflection.size()) {{
-    reflection[index] = std::endian::native == std::endian::little ? value : std::byteswap(value);
+    while (!remaining_bytes.empty() && remaining_bytes.front() == 0) {{
+      remaining_bytes = remaining_bytes.subspan(1);
+    }}
+
+    if (reflection) {{
+      (*reflection)[size] = remaining_bytes.size();
+      std::ranges::copy(remaining_bytes, std::next(reflection->begin(), size + 1));
+    }}
+
+    size += 1 + remaining_bytes.size();
   }}
-
-  index++;
 }}
 
 template<class Struct, std::endian ENDIANNESS, instance_of<member>... Members>
 struct struct_register : std::type_identity<Struct> {{
-  static consteval void build_reflection(std::size_t& index, const std::span<std::uint16_t> reflection) {{
-    ((set<Members::OFFSET>(index, reflection), set<sizeof(typename Members::type)>(index, reflection)), ...);
-    set<sizeof(Struct)>(index, reflection);
+  static consteval void build_reflection(const std::optional<std::span<std::uint8_t>> reflection, std::size_t& size) {{
+    compress_losslessly_and_push<Members::OFFSET..., sizeof(typename Members::type)..., sizeof(Struct)>(reflection, size);
   }}
 
 private:
@@ -145,21 +153,17 @@ struct vendor<T, Ts...> {{
 template<class Conduit, std::uint16_t VERSION, class... StructRegisters>
 struct conduit_register : std::type_identity<Conduit>, vendor<StructRegisters...> {{
   static consteval auto get_reflection() {{
-    constexpr auto REFLECTION_SIZE{{build_reflection()}};
-
-    std::array<std::uint16_t, REFLECTION_SIZE> reflection{{}};
-    build_reflection<REFLECTION_SIZE>(reflection);
+    std::array<std::uint8_t, build_reflection()> reflection{{}};
+    build_reflection(reflection);
     return reflection;
   }}
 
 private:
-  template<std::size_t REFLECTION_SIZE = 0>
-  static consteval std::size_t build_reflection(const std::span<std::uint16_t> reflection = {{}}) {{
-    std::size_t index{{}};
-    set<REFLECTION_SIZE>(index, reflection);
-    set<VERSION>(index, reflection);
-    (StructRegisters::build_reflection(index, reflection), ...);
-    return index;
+  static consteval std::size_t build_reflection(const std::optional<std::span<std::uint8_t>> reflection = {{}}) {{
+    std::size_t size{{}};
+    compress_losslessly_and_push<VERSION>(reflection, size);
+    (StructRegisters::build_reflection(reflection, size), ...);
+    return size;
   }}
 }};
 

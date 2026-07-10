@@ -73,23 +73,40 @@ struct member : std::type_identity<T> {{
 template<typename T, template<typename, std::size_t> class Template>
 concept instance_of = requires (T t) {{ Template(t); }};
 
+consteval int push_type_indicator_bytes_of(const std::size_t value, const std::optional<std::span<std::uint8_t>> reflection, std::size_t& size) {{
+  const int bit_width{{std::bit_width(value)}};
+  const bool has_max_value{{std::countr_one(value) == bit_width}};
+  constexpr int BITS_PER_BYTE{{std::numeric_limits<std::uint8_t>::digits}};
+  const int extra_byte{{bit_width % BITS_PER_BYTE != 0 || (has_max_value && value != std::numeric_limits<decltype(value)>::max())}};
+  const int bytes_required{{(bit_width / BITS_PER_BYTE) + extra_byte}};
+  int compressed_byte_count{{1}};
+
+  while (compressed_byte_count < bytes_required) {{
+    if (reflection) {{
+      std::ranges::fill(reflection->subspan(size, compressed_byte_count), std::numeric_limits<std::uint8_t>::max());
+    }}
+
+    size += compressed_byte_count;
+
+    constexpr int SCALE_FACTOR{{2}};
+    compressed_byte_count *= SCALE_FACTOR;
+  }}
+
+  return compressed_byte_count;
+}}
+
 template<std::size_t... VALUES>
 consteval void compress_losslessly_and_push(const std::optional<std::span<std::uint8_t>> reflection, std::size_t& size) {{
   for (const auto value : {{VALUES...}}) {{
-    const auto big_endian_value{{std::endian::native == std::endian::little ? std::byteswap(value) : value}};
-    const auto bytes{{std::bit_cast<std::array<std::uint8_t, sizeof(big_endian_value)>>(big_endian_value)}};
-    std::span<const std::uint8_t> remaining_bytes{{bytes}};
-
-    while (!remaining_bytes.empty() && remaining_bytes.front() == 0) {{
-      remaining_bytes = remaining_bytes.subspan(1);
-    }}
+    const auto compressed_byte_count{{push_type_indicator_bytes_of(value, reflection, size)}};
 
     if (reflection) {{
-      (*reflection)[size] = remaining_bytes.size();
-      std::ranges::copy(remaining_bytes, std::next(reflection->begin(), size + 1));
+      const auto little_endian_value{{std::endian::native == std::endian::big ? std::byteswap(value) : value}};
+      const auto bytes{{std::bit_cast<std::array<std::uint8_t, sizeof(little_endian_value)>>(little_endian_value)}};
+      std::ranges::copy(bytes | std::views::take(compressed_byte_count), std::next(reflection->begin(), size));
     }}
 
-    size += 1 + remaining_bytes.size();
+    size += compressed_byte_count;
   }}
 }}
 

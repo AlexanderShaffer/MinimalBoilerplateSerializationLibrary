@@ -24,7 +24,7 @@ int main(const int argc, const char* const* const argv) {
   const auto args{std::span{argv, static_cast<std::size_t>(argc)} | std::views::drop(1)};
   std::size_t max_config_size{};
 
-  for (const auto* const arg : args) {
+  for (const char* const arg : args) {
     std::filesystem::path config_path{arg};
 
     if (!std::filesystem::exists(config_path) || std::filesystem::is_directory(config_path)) {
@@ -35,7 +35,7 @@ int main(const int argc, const char* const* const argv) {
     max_config_size = std::max(max_config_size, std::filesystem::file_size(config_path));
   }
 
-  for (std::string config(max_config_size, '\0'); const auto* const config_path : args) {
+  for (std::string config(max_config_size, '\0'); const char* const config_path : args) {
     std::ifstream config_file{config_path, std::ios::binary};
 
     if (!config_file) {

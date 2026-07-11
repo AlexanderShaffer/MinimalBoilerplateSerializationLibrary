@@ -64,19 +64,19 @@ concept endianness_susceptible = std::is_trivially_copyable_v<T> && !std::is_poi
 template<typename T>
 concept endianness_resistant = std::is_trivially_copyable_v<T> && alignof(T) == 1;
 
-template<typename T, size_t MEMBER_OFFSET>
+template<typename T, size_t _OFFSET>
 requires noncontiguous<T> || endianness_susceptible<T> || endianness_resistant<T>
 struct member : std::type_identity<T> {{
-  static constexpr auto OFFSET{{MEMBER_OFFSET}};
+  static constexpr std::size_t OFFSET{{_OFFSET}};
 }};
 
 template<typename T, template<typename, std::size_t> class Template>
 concept instance_of = requires (T t) {{ Template(t); }};
 
 consteval int push_type_indicator_bytes_of(const std::size_t value, const std::optional<std::span<std::uint8_t>> reflection, std::size_t& size) {{
+  static constexpr int BITS_PER_BYTE{{std::numeric_limits<std::uint8_t>::digits}};
   const int bit_width{{std::bit_width(value)}};
   const bool has_max_value{{std::countr_one(value) == bit_width}};
-  constexpr int BITS_PER_BYTE{{std::numeric_limits<std::uint8_t>::digits}};
   const int extra_byte{{bit_width % BITS_PER_BYTE != 0 || (has_max_value && value != std::numeric_limits<decltype(value)>::max())}};
   const int bytes_required{{(bit_width / BITS_PER_BYTE) + extra_byte}};
   int compressed_byte_count{{1}};
@@ -88,7 +88,7 @@ consteval int push_type_indicator_bytes_of(const std::size_t value, const std::o
 
     size += compressed_byte_count;
 
-    constexpr int SCALE_FACTOR{{2}};
+    static constexpr int SCALE_FACTOR{{2}};
     compressed_byte_count *= SCALE_FACTOR;
   }}
 
@@ -97,11 +97,11 @@ consteval int push_type_indicator_bytes_of(const std::size_t value, const std::o
 
 template<std::size_t... VALUES>
 consteval void compress_losslessly_and_push(const std::optional<std::span<std::uint8_t>> reflection, std::size_t& size) {{
-  for (const auto value : {{VALUES...}}) {{
-    const auto compressed_byte_count{{push_type_indicator_bytes_of(value, reflection, size)}};
+  for (const std::size_t value : {{VALUES...}}) {{
+    const int compressed_byte_count{{push_type_indicator_bytes_of(value, reflection, size)}};
 
     if (reflection) {{
-      const auto little_endian_value{{std::endian::native == std::endian::big ? std::byteswap(value) : value}};
+      const std::size_t little_endian_value{{std::endian::native == std::endian::big ? std::byteswap(value) : value}};
       const auto bytes{{std::bit_cast<std::array<std::uint8_t, sizeof(little_endian_value)>>(little_endian_value)}};
       std::ranges::copy(bytes | std::views::take(compressed_byte_count), std::next(reflection->begin(), size));
     }}

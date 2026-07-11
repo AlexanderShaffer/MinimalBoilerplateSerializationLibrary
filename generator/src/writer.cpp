@@ -40,7 +40,7 @@ auto try_emplace(auto& map, const std::string_view key_constructor_arg, const st
 } // namespace
 
 struct_code_generator* struct_code_generator::create(const std::string_view struct_name, const properties& properties) {
-  auto* const conduit{try_emplace(g_conduits, properties.conduit_name_, properties.conduit_version_).first};
+  conduit* const conduit{try_emplace(g_conduits, properties.conduit_name_, properties.conduit_version_).first};
 
   if (conduit->version_ != properties.conduit_version_) {
     std::println(std::cerr, "Error: differing versions of the same conduit are unsupported");

@@ -28,7 +28,7 @@ public:
   explicit state(const std::string_view config) : m_config{config} {}
 
   std::string_view get_next_token() {
-    constexpr std::string_view WHITESPACE{" \n\r\t"};
+    static constexpr std::string_view WHITESPACE{" \n\r\t"};
 
     do {
       m_config.remove_prefix(std::min(m_config.find_first_not_of(WHITESPACE), m_config.size()));
@@ -50,15 +50,15 @@ private:
       return false;
     }
 
-    const auto end_pos{m_config.find(end_delimiter)};
+    const std::size_t end_pos{m_config.find(end_delimiter)};
     m_config.remove_prefix(end_pos == std::string_view::npos ? m_config.size() : end_pos + end_delimiter.size());
     return true;
   }
 };
 
-using parser = std::function<bool(state&)>;
+using token_parser = std::function<bool(state&)>;
 
-std::pair<std::string_view, parser> create_assignment_parser(const std::string_view name, std::string_view writer::properties::* const member) {
+std::pair<std::string_view, token_parser> create_assignment_parser(const std::string_view name, std::string_view writer::properties::* const member) {
   return {name, [=](state& state) {
             state.properties_.*member = state.get_next_token();
             return true;
@@ -66,18 +66,18 @@ std::pair<std::string_view, parser> create_assignment_parser(const std::string_v
 }
 
 bool parse_struct(state& state) {
-  auto* const struct_code_generator{writer::struct_code_generator::create(state.get_next_token(), state.properties_)};
+  writer::struct_code_generator* const struct_code_generator{writer::struct_code_generator::create(state.get_next_token(), state.properties_)};
 
   if (!struct_code_generator) {
     return false;
   }
 
-  if (constexpr std::string_view START{"{"}; state.get_next_token() != START) {
+  if (static constexpr std::string_view START{"{"}; state.get_next_token() != START) {
     std::println(std::cerr, "Error: a struct definition must begin with a \"{}\" surrounded by whitespace", START);
     return false;
   }
 
-  constexpr std::string_view END{"}"};
+  static constexpr std::string_view END{"}"};
 
   while (state.get_next_token() != END) {
     if (state.get_current_token().empty()) {
@@ -96,18 +96,18 @@ bool parse_unrecognized_token(const state& state) {
   return false;
 }
 
-const parser& get_parser(const std::string_view token) {
+const token_parser& get_token_parser(const std::string_view token) {
   static const std::unordered_map PARSERS{create_assignment_parser("conduit", &writer::properties::conduit_name_),
                                           create_assignment_parser("version", &writer::properties::conduit_version_),
                                           create_assignment_parser("endianness", &writer::properties::struct_endianness_),
                                           {"struct", parse_struct}};
 
   if (const auto iterator{PARSERS.find(token)}; iterator != PARSERS.end()) {
-    const auto& [_, parse]{*iterator};
+    const token_parser& parse{iterator->second};
     return parse;
   }
 
-  static const parser PARSE_UNRECOGNIZED_TOKEN{parse_unrecognized_token};
+  static const token_parser PARSE_UNRECOGNIZED_TOKEN{parse_unrecognized_token};
   return PARSE_UNRECOGNIZED_TOKEN;
 }
 } // namespace
@@ -116,7 +116,7 @@ bool parse(const std::string_view config) {
   state state{config};
 
   while (!state.get_next_token().empty()) {
-    if (const auto& parse{get_parser(state.get_current_token())}; !parse(state)) {
+    if (const token_parser& parse{get_token_parser(state.get_current_token())}; !parse(state)) {
       return false;
     }
   }

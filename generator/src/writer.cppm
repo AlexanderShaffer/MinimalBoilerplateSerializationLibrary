@@ -21,27 +21,23 @@ import std;
 
 export namespace writer {
 struct properties {
-  std::string_view name_{"conduit"};
-  std::string_view version_{"0"};
-  std::string_view endianness_{"little"};
+  std::string_view conduit_name_{"conduit"};
+  std::string_view conduit_version_{"0"};
+  std::string_view struct_endianness_{"little"};
 };
 
-class struct_block {
+class struct_code_generator {
 public:
-  static struct_block create(std::string_view struct_name, const properties& properties);
+  static struct_code_generator* create(std::string_view struct_name, const properties& properties);
 
-  ~struct_block();
-  struct_block(const struct_block& other) = delete;
-  struct_block(struct_block&& other) = delete;
-  void operator=(const struct_block& other) = delete;
-  void operator=(struct_block&& other) = delete;
+  explicit struct_code_generator(std::string_view name);
 
   void add_member(std::string_view type, std::string_view name);
 
 private:
-  std::string_view m_name{};
-
-  explicit struct_block(std::string_view name);
+  std::string m_name{};
+  std::string m_definition{};
+  std::string m_register{};
 };
 
 void write_library();

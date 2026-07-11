@@ -66,7 +66,11 @@ std::pair<std::string_view, parser> create_assignment_parser(const std::string_v
 }
 
 bool parse_struct(state& state) {
-  auto struct_block{writer::struct_block::create(state.get_next_token(), state.properties_)};
+  auto* const struct_code_generator{writer::struct_code_generator::create(state.get_next_token(), state.properties_)};
+
+  if (!struct_code_generator) {
+    return false;
+  }
 
   if (constexpr std::string_view START{"{"}; state.get_next_token() != START) {
     std::println(std::cerr, "Error: a struct definition must begin with a \"{}\" surrounded by whitespace", START);
@@ -81,7 +85,7 @@ bool parse_struct(state& state) {
       return false;
     }
 
-    struct_block.add_member(state.get_current_token(), state.get_next_token());
+    struct_code_generator->add_member(state.get_current_token(), state.get_next_token());
   }
 
   return true;
@@ -93,9 +97,9 @@ bool parse_unrecognized_token(const state& state) {
 }
 
 const parser& get_parser(const std::string_view token) {
-  static const std::unordered_map PARSERS{create_assignment_parser("conduit", &writer::properties::name_),
-                                          create_assignment_parser("version", &writer::properties::version_),
-                                          create_assignment_parser("endianness", &writer::properties::endianness_),
+  static const std::unordered_map PARSERS{create_assignment_parser("conduit", &writer::properties::conduit_name_),
+                                          create_assignment_parser("version", &writer::properties::conduit_version_),
+                                          create_assignment_parser("endianness", &writer::properties::struct_endianness_),
                                           {"struct", parse_struct}};
 
   if (const auto iterator{PARSERS.find(token)}; iterator != PARSERS.end()) {

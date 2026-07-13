@@ -46,11 +46,17 @@ import std;
 
 static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big, "Mixed endianness is unsupported");
 
+namespace mbsl {{
+namespace {{
+template<std::integral Integral>
+consteval auto serialize_little_endian(const Integral data) {{
+  const Integral little_endian_data{{std::endian::native == std::endian::little ? data : std::byteswap(data)}};
+  return std::bit_cast<std::array<std::uint8_t, sizeof(little_endian_data)>>(little_endian_data);
+}}
+}} // namespace
+}} // namespace mbsl
+
 export namespace mbsl {{
-template<class>
-struct reflection_vendor {{
-  static consteval auto get_reflection();
-}};
 {}}} // namespace mbsl
 
 namespace mbsl {{
@@ -134,11 +140,10 @@ struct conduit_register : std::type_identity<Conduit>, vendor<StructRegisters...
 
     for (const std::initializer_list<std::size_t> values : {{StructRegisters::REFLECTION_VALUES...}}) {{
       for (const std::size_t value : values) {{
-        const std::size_t little_endian_value{{std::endian::native == std::endian::big ? std::byteswap(value) : value}};
-        const auto bytes{{std::bit_cast<std::array<std::uint8_t, sizeof(little_endian_value)>>(little_endian_value)}};
+        const auto serialized_value{{serialize_little_endian(value)}};
 
-        std::ranges::copy(bytes, subrange.begin());
-        subrange.advance(bytes.size());
+        std::ranges::copy(serialized_value, subrange.begin());
+        subrange.advance(serialized_value.size());
       }}
     }}
 
@@ -180,11 +185,6 @@ void swap_bytes_if_endianness_susceptible(const auto& in, auto& out) {{
   }}
 }}
 }} // namespace
-
-template<class Conduit>
-consteval auto reflection_vendor<Conduit>::get_reflection() {{
-  return registry::get<Conduit>::get_reflection();
-}}
 }} // namespace mbsl
 )"};
 } // namespace library_template

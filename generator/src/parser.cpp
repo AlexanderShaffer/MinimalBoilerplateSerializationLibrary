@@ -98,7 +98,6 @@ bool parse_unrecognized_token(const state& state) {
 
 const token_parser& get_token_parser(const std::string_view token) {
   static const std::unordered_map PARSERS{create_assignment_parser("conduit", &writer::properties::conduit_name_),
-                                          create_assignment_parser("version", &writer::properties::conduit_version_),
                                           create_assignment_parser("endianness", &writer::properties::struct_endianness_),
                                           {"struct", parse_struct}};
 

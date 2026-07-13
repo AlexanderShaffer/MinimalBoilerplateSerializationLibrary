@@ -46,21 +46,7 @@ import std;
 
 static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big, "Mixed endianness is unsupported");
 
-namespace mbsl {{
-namespace {{
-template<std::integral Integral>
-consteval auto serialize_little_endian(const Integral data) {{
-  const Integral little_endian_data{{std::endian::native == std::endian::little ? data : std::byteswap(data)}};
-  return std::bit_cast<std::array<std::uint8_t, sizeof(little_endian_data)>>(little_endian_data);
-}}
-}} // namespace
-}} // namespace mbsl
-
 export namespace mbsl {{
-template<std::size_t VERSION_>
-struct conduit_version {{
-  static constexpr auto VERSION{{serialize_little_endian(VERSION_)}};
-}};
 {}}} // namespace mbsl
 
 namespace mbsl {{
@@ -136,15 +122,16 @@ struct vendor {{
   using get = decltype(find_type_linked_to<Identifier>());
 }};
 
-template<class Conduit, class... StructRegisters>
-struct conduit_register : std::type_identity<Conduit>, vendor<StructRegisters...> {{
+template<class... StructRegisters>
+struct conduit_register : vendor<StructRegisters...> {{
   static consteval auto get_reflection() {{
     std::array<std::uint8_t, (StructRegisters::REFLECTION_VALUES_SIZE_BYTES + ... + 0)> reflection{{}};
     std::ranges::subrange subrange{{reflection}};
 
     for (const std::initializer_list<std::size_t> values : {{StructRegisters::REFLECTION_VALUES...}}) {{
       for (const std::size_t value : values) {{
-        const auto serialized_value{{serialize_little_endian(value)}};
+        const std::size_t little_endian_value{{std::endian::native == std::endian::little ? value : std::byteswap(value)}};
+        const auto serialized_value{{std::bit_cast<std::array<std::uint8_t, sizeof(little_endian_value)>>(little_endian_value)}};
 
         std::ranges::copy(serialized_value, subrange.begin());
         subrange.advance(serialized_value.size());

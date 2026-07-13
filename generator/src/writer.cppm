@@ -22,7 +22,6 @@ import std;
 export namespace writer {
 struct properties {
   std::string_view conduit_name_{"conduit"};
-  std::string_view conduit_version_{"0"};
   std::string_view struct_endianness_{"little"};
 };
 

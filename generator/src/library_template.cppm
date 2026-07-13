@@ -57,6 +57,10 @@ consteval auto serialize_little_endian(const Integral data) {{
 }} // namespace mbsl
 
 export namespace mbsl {{
+template<std::size_t VERSION_>
+struct conduit_version {{
+  static constexpr auto VERSION{{serialize_little_endian(VERSION_)}};
+}};
 {}}} // namespace mbsl
 
 namespace mbsl {{
@@ -70,10 +74,10 @@ concept endianness_susceptible = std::is_trivially_copyable_v<T> && !std::is_poi
 template<typename T>
 concept endianness_resistant = std::is_trivially_copyable_v<T> && alignof(T) == 1;
 
-template<typename T, size_t _OFFSET>
+template<typename T, std::size_t OFFSET_>
 requires noncontiguous<T> || endianness_susceptible<T> || endianness_resistant<T>
 struct member : std::type_identity<T> {{
-  static constexpr std::size_t OFFSET{{_OFFSET}};
+  static constexpr std::size_t OFFSET{{OFFSET_}};
 }};
 
 template<typename T, template<typename, std::size_t> class Template>
@@ -166,7 +170,7 @@ void swap_bytes(const auto& in, auto& out) {{
 }}
 
 template<typename T>
-void swap_bytes(const size_t offset, const auto& in, auto& out) {{
+void swap_bytes(const std::size_t offset, const auto& in, auto& out) {{
   const auto& in_pos{{reinterpret_cast<const std::byte*>(&in)[offset]}};
   auto& out_pos{{reinterpret_cast<std::byte*>(&out)[offset]}};
 
@@ -177,7 +181,7 @@ void swap_bytes(const size_t offset, const auto& in, auto& out) {{
 template<instance_of<member> Member>
 void swap_bytes_if_endianness_susceptible(const auto& in, auto& out) {{
   if constexpr (instance_of<typename Member::type, std::array> && endianness_susceptible<typename Member::type>) {{
-    for (size_t i{{}}; i < sizeof(typename Member::type); i += sizeof(typename Member::type::value_type)) {{
+    for (std::size_t i{{}}; i < sizeof(typename Member::type); i += sizeof(typename Member::type::value_type)) {{
       swap_bytes<typename Member::type::value_type>(Member::OFFSET + i, in, out);
     }}
   }} else if constexpr (endianness_susceptible<typename Member::type>) {{

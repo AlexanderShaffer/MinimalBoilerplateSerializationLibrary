@@ -123,7 +123,7 @@ struct vendor {{
 }};
 
 template<class... StructRegisters>
-struct conduit_register : vendor<StructRegisters...> {{
+struct group_register : vendor<StructRegisters...> {{
   static consteval auto get_reflection() {{
     std::array<std::uint8_t, (StructRegisters::REFLECTION_VALUES_SIZE_BYTES + ... + 0)> reflection{{}};
     std::ranges::subrange subrange{{reflection}};

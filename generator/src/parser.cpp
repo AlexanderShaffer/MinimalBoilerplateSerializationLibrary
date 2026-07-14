@@ -23,7 +23,7 @@ namespace parser {
 namespace {
 class state {
 public:
-  std::string_view conduit_name_{};
+  std::string_view group_name_{};
   std::string_view struct_endianness_{"little"};
 
   explicit state(const std::string_view config) : m_config{config} {}
@@ -90,10 +90,10 @@ bool parse_struct(state& state) {
     members.emplace_back(state.get_current_token(), state.get_next_token());
   }
 
-  const bool unique{writer::add_struct(state.conduit_name_, name, state.struct_endianness_, std::move(members))};
+  const bool unique{writer::add_struct(state.group_name_, name, state.struct_endianness_, std::move(members))};
 
   if (!unique) {
-    std::println(std::cerr, "Error: all structs within a conduit must have a unique name");
+    std::println(std::cerr, "Error: all structs within a group must have a unique name");
   }
 
   return unique;
@@ -105,7 +105,7 @@ bool parse_unrecognized_token(state& state) {
 }
 
 token_parser get_token_parser(const std::string_view token) {
-  static const std::unordered_map TOKEN_PARSERS{create_assignment_parser<&state::conduit_name_>("conduit"),
+  static const std::unordered_map TOKEN_PARSERS{create_assignment_parser<&state::group_name_>("group"),
                                                 create_assignment_parser<&state::struct_endianness_>("endianness"),
                                                 {"struct", parse_struct}};
 

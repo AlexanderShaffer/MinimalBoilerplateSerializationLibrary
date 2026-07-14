@@ -16,13 +16,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-// Assigns the conduit of all structs that follow. The default is conduit.
-conduit example_conduit
+// Assigns the group of all structs that follow.
+group example_group
 
 // Assigns the endianness of all structs that follow. Valid values are little, big, and native. The default is little.
 endianness big
 
-// Defines a C++ struct in the mbsl::example_conduit namespace with automatically generated serialization and deserialization functions.
+// Defines a C++ struct in the mbsl::example_group namespace with automatically generated serialization and deserialization functions.
 struct example_struct {
   double x_
   int y_

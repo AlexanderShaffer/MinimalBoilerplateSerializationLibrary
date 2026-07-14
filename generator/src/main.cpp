@@ -22,7 +22,7 @@ import writer;
 
 int main(const int argc, const char* const* const argv) {
   const auto args{std::span{argv, static_cast<std::size_t>(argc)} | std::views::drop(1)};
-  std::size_t max_config_size{};
+  std::size_t buffer_size{};
 
   for (const char* const arg : args) {
     std::filesystem::path config_path{arg};
@@ -32,10 +32,12 @@ int main(const int argc, const char* const* const argv) {
       return 1;
     }
 
-    max_config_size = std::max(max_config_size, std::filesystem::file_size(config_path));
+    buffer_size += std::filesystem::file_size(config_path);
   }
 
-  for (std::string config(max_config_size, '\0'); const char* const config_path : args) {
+  const std::unique_ptr buffer{std::make_unique_for_overwrite<char[]>(buffer_size)};
+
+  for (std::span buffer_span{buffer.get(), buffer_size}; const char* const config_path : args) {
     std::ifstream config_file{config_path, std::ios::binary};
 
     if (!config_file) {
@@ -43,13 +45,16 @@ int main(const int argc, const char* const* const argv) {
       return 1;
     }
 
-    config_file.read(config.data(), config.size());
+    config_file.read(buffer_span.data(), buffer_span.size());
 
-    if (!parser::parse(std::string_view{config.c_str(), static_cast<std::size_t>(config_file.gcount())})) {
+    const std::size_t config_size{static_cast<std::size_t>(config_file.gcount())};
+
+    if (!parser::parse(std::string_view{buffer_span.data(), config_size})) {
       std::println(std::cerr, "Error: \"{}\" is malformed", config_path);
       return 1;
     }
 
+    buffer_span = buffer_span.subspan(config_size);
     std::println("Successfully parsed \"{}\"", config_path);
   }
 

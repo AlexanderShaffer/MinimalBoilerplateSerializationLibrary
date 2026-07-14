@@ -22,9 +22,9 @@ import library_template;
 namespace writer {
 namespace {
 struct struct_info {
-  std::string conduit_name_{};
-  std::string struct_name_{};
-  std::string endianness_{};
+  std::string_view conduit_name_{};
+  std::string_view struct_name_{};
+  std::string_view endianness_{};
   std::vector<member> members_{};
 };
 
@@ -38,7 +38,7 @@ std::flat_set<struct_info> g_structs{};
 
 bool add_struct(const std::string_view conduit_name, const std::string_view struct_name, const std::string_view endianness,
                 std::vector<member>&& members) {
-  const bool unique{g_structs.emplace(std::string{conduit_name}, std::string{struct_name}, std::string{endianness}, std::move(members)).second};
+  const bool unique{g_structs.emplace(conduit_name, struct_name, endianness, std::move(members)).second};
   return unique;
 }
 

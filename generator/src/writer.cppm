@@ -21,8 +21,8 @@ import std;
 
 export namespace writer {
 struct member {
-  std::string type_{};
-  std::string name_{};
+  std::string_view type_{};
+  std::string_view name_{};
 };
 
 bool add_struct(std::string_view conduit_name, std::string_view struct_name, std::string_view endianness, std::vector<member>&& members);

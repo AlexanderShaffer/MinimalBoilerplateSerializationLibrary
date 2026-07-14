@@ -24,7 +24,7 @@ namespace {
 class state {
 public:
   std::string_view conduit_name_{};
-  std::string_view struct_endianness_{};
+  std::string_view struct_endianness_{"little"};
 
   explicit state(const std::string_view config) : m_config{config} {}
 
@@ -86,7 +86,7 @@ bool parse_struct(state& state) {
       return false;
     }
 
-    members.emplace_back(std::string{state.get_current_token()}, std::string{state.get_next_token()});
+    members.emplace_back(state.get_current_token(), state.get_next_token());
   }
 
   const bool unique{writer::add_struct(state.conduit_name_, name, state.struct_endianness_, std::move(members))};

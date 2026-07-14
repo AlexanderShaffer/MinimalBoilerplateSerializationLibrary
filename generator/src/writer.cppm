@@ -20,24 +20,11 @@ export module writer;
 import std;
 
 export namespace writer {
-struct properties {
-  std::string_view conduit_name_{"conduit"};
-  std::string_view struct_endianness_{"little"};
+struct member {
+  std::string type_{};
+  std::string name_{};
 };
 
-class struct_code_generator {
-public:
-  static struct_code_generator* create(std::string_view struct_name, const properties& properties);
-
-  explicit struct_code_generator(std::string_view name);
-
-  void add_member(std::string_view type, std::string_view name);
-
-private:
-  std::string m_name{};
-  std::string m_definition{};
-  std::string m_register{};
-};
-
+bool add_struct(std::string_view conduit_name, std::string_view struct_name, std::string_view endianness, std::vector<member>&& members);
 void write_library();
 } // namespace writer

@@ -21,34 +21,26 @@ import library_template;
 
 namespace writer {
 namespace {
-using name = std::string;
-using conduit = std::flat_map<name, struct_code_generator>;
+struct struct_info {
+  std::string conduit_name_{};
+  std::string struct_name_{};
+  std::string endianness_{};
+  std::vector<member> members_{};
+};
 
-std::unordered_map<name, conduit> g_conduits{};
-
-template<typename... ValueConstructorArgs>
-auto try_emplace(auto& map, const std::string_view key_constructor_arg, ValueConstructorArgs&&... value_constructor_args) {
-  const auto [iterator, success]{map.try_emplace(std::string{key_constructor_arg}, std::forward<ValueConstructorArgs...>(value_constructor_args...))};
-  auto& value{iterator->second};
-  return std::pair{&value, success};
+std::strong_ordering operator<=>(const struct_info& lhs, const struct_info& rhs) {
+  const std::strong_ordering conduit_ordering{lhs.conduit_name_ <=> rhs.conduit_name_};
+  return conduit_ordering == std::strong_ordering::equal ? lhs.struct_name_ <=> rhs.struct_name_ : conduit_ordering;
 }
+
+std::flat_set<struct_info> g_structs{};
 } // namespace
 
-struct_code_generator* struct_code_generator::create(const std::string_view struct_name, const properties& properties) {
-  conduit* const conduit{try_emplace(g_conduits, properties.conduit_name_).first};
-  const auto [struct_code_generator, success]{try_emplace(*conduit, struct_name, struct_name)};
-
-  if (!success) {
-    std::println(std::cerr, "Error: all structs within a conduit must have a unique name");
-    return nullptr;
-  }
-
-  return struct_code_generator;
+bool add_struct(const std::string_view conduit_name, const std::string_view struct_name, const std::string_view endianness,
+                std::vector<member>&& members) {
+  const bool unique{g_structs.emplace(std::string{conduit_name}, std::string{struct_name}, std::string{endianness}, std::move(members)).second};
+  return unique;
 }
-
-struct_code_generator::struct_code_generator(const std::string_view name) : m_name{name}, m_definition{std::format("struct {} {{\n", name)} {}
-
-void struct_code_generator::add_member(const std::string_view type, const std::string_view name) {}
 
 void write_library() {
   std::ofstream out{"mbsl.cppm"};

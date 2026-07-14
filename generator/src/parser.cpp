@@ -23,7 +23,8 @@ namespace parser {
 namespace {
 class state {
 public:
-  writer::properties properties_{};
+  std::string_view conduit_name_{};
+  std::string_view struct_endianness_{};
 
   explicit state(const std::string_view config) : m_config{config} {}
 
@@ -58,26 +59,26 @@ private:
 
 using token_parser = std::function<bool(state&)>;
 
-std::pair<std::string_view, token_parser> create_assignment_parser(const std::string_view name, std::string_view writer::properties::* const member) {
+std::pair<std::string_view, token_parser> create_assignment_parser(const std::string_view name, std::string_view state::* const member) {
   return {name, [=](state& state) {
-            state.properties_.*member = state.get_next_token();
+            state.*member = state.get_next_token();
             return true;
           }};
 }
 
 bool parse_struct(state& state) {
-  writer::struct_code_generator* const struct_code_generator{writer::struct_code_generator::create(state.get_next_token(), state.properties_)};
-
-  if (!struct_code_generator) {
-    return false;
-  }
+  const std::string_view name{state.get_next_token()};
 
   if (static constexpr std::string_view START{"{"}; state.get_next_token() != START) {
     std::println(std::cerr, "Error: a struct definition must begin with a \"{}\" surrounded by whitespace", START);
     return false;
   }
 
+  static constexpr std::size_t INITIAL_MEMBER_CAPACITY{8};
   static constexpr std::string_view END{"}"};
+  std::vector<writer::member> members{};
+
+  members.reserve(INITIAL_MEMBER_CAPACITY);
 
   while (state.get_next_token() != END) {
     if (state.get_current_token().empty()) {
@@ -85,10 +86,16 @@ bool parse_struct(state& state) {
       return false;
     }
 
-    struct_code_generator->add_member(state.get_current_token(), state.get_next_token());
+    members.emplace_back(std::string{state.get_current_token()}, std::string{state.get_next_token()});
   }
 
-  return true;
+  const bool unique{writer::add_struct(state.conduit_name_, name, state.struct_endianness_, std::move(members))};
+
+  if (!unique) {
+    std::println(std::cerr, "Error: all structs within a conduit must have a unique name");
+  }
+
+  return unique;
 }
 
 bool parse_unrecognized_token(const state& state) {
@@ -97,8 +104,8 @@ bool parse_unrecognized_token(const state& state) {
 }
 
 const token_parser& get_token_parser(const std::string_view token) {
-  static const std::unordered_map PARSERS{create_assignment_parser("conduit", &writer::properties::conduit_name_),
-                                          create_assignment_parser("endianness", &writer::properties::struct_endianness_),
+  static const std::unordered_map PARSERS{create_assignment_parser("conduit", &state::conduit_name_),
+                                          create_assignment_parser("endianness", &state::struct_endianness_),
                                           {"struct", parse_struct}};
 
   if (const auto iterator{PARSERS.find(token)}; iterator != PARSERS.end()) {

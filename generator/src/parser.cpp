@@ -57,11 +57,12 @@ private:
   }
 };
 
-using token_parser = std::function<bool(state&)>;
+using token_parser = bool (*)(state&);
 
-std::pair<std::string_view, token_parser> create_assignment_parser(const std::string_view name, std::string_view state::* const member) {
-  return {name, [=](state& state) {
-            state.*member = state.get_next_token();
+template<std::string_view state::* MEMBER>
+std::pair<std::string_view, token_parser> create_assignment_parser(const std::string_view name) {
+  return {name, [](state& state) {
+            state.*MEMBER = state.get_next_token();
             return true;
           }};
 }
@@ -98,23 +99,21 @@ bool parse_struct(state& state) {
   return unique;
 }
 
-bool parse_unrecognized_token(const state& state) {
+bool parse_unrecognized_token(state& state) {
   std::println(std::cerr, "Error: unrecognized token \"{}\"", state.get_current_token());
   return false;
 }
 
-const token_parser& get_token_parser(const std::string_view token) {
-  static const std::unordered_map PARSERS{create_assignment_parser("conduit", &state::conduit_name_),
-                                          create_assignment_parser("endianness", &state::struct_endianness_),
-                                          {"struct", parse_struct}};
+token_parser get_token_parser(const std::string_view token) {
+  static const std::unordered_map TOKEN_PARSERS{create_assignment_parser<&state::conduit_name_>("conduit"),
+                                                create_assignment_parser<&state::struct_endianness_>("endianness"),
+                                                {"struct", parse_struct}};
 
-  if (const auto iterator{PARSERS.find(token)}; iterator != PARSERS.end()) {
-    const token_parser& parse{iterator->second};
-    return parse;
+  if (const auto iterator{TOKEN_PARSERS.find(token)}; iterator != TOKEN_PARSERS.end()) {
+    return iterator->second;
   }
 
-  static const token_parser PARSE_UNRECOGNIZED_TOKEN{parse_unrecognized_token};
-  return PARSE_UNRECOGNIZED_TOKEN;
+  return parse_unrecognized_token;
 }
 } // namespace
 

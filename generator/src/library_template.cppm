@@ -20,8 +20,7 @@ export module library_template;
 import std;
 
 export namespace library_template {
-constexpr std::string_view FORMAT_STRING{
-R"(/*
+constexpr std::string_view BEGINNING{R"(/*
  * This file is part of MinimalBoilerplateSerializationLibrary.
  * Copyright (C) 2026 Alexander Shaffer <alexander.shaffer.623@gmail.com>
  *
@@ -46,11 +45,13 @@ import std;
 
 static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big, "Mixed endianness is unsupported");
 
-export namespace mbsl {{
-{}}} // namespace mbsl
+export namespace mbsl {
+)"};
 
-namespace mbsl {{
-namespace {{
+constexpr std::string_view MIDDLE{R"(} // namespace mbsl
+
+namespace mbsl {
+namespace {
 template<typename T>
 concept noncontiguous = false; // TODO: Implement this concept
 
@@ -62,120 +63,122 @@ concept endianness_resistant = std::is_trivially_copyable_v<T> && alignof(T) == 
 
 template<typename T, std::size_t OFFSET_>
 requires noncontiguous<T> || endianness_susceptible<T> || endianness_resistant<T>
-struct member : std::type_identity<T> {{
-  static constexpr std::size_t OFFSET{{OFFSET_}};
-}};
+struct member : std::type_identity<T> {
+  static constexpr std::size_t OFFSET{OFFSET_};
+};
 
 template<typename T, template<typename, std::size_t> class Template>
-concept instance_of = requires (T t) {{ Template(t); }};
+concept instance_of = requires (T t) { Template(t); };
 
 template<class Struct, std::endian ENDIANNESS, instance_of<member>... Members>
-struct struct_register : std::type_identity<Struct> {{
-  static constexpr std::initializer_list<std::size_t> REFLECTION_VALUES{{Members::OFFSET..., sizeof(typename Members::type)..., sizeof(Struct)}};
-  static constexpr std::size_t REFLECTION_VALUES_SIZE_BYTES{{REFLECTION_VALUES.size() * sizeof(typename decltype(REFLECTION_VALUES)::value_type)}};
+struct struct_register : std::type_identity<Struct> {
+  static constexpr std::initializer_list<std::size_t> REFLECTION_VALUES{Members::OFFSET..., sizeof(typename Members::type)..., sizeof(Struct)};
+  static constexpr std::size_t REFLECTION_VALUES_SIZE_BYTES{REFLECTION_VALUES.size() * sizeof(typename decltype(REFLECTION_VALUES)::value_type)};
 
 private:
-  static consteval bool is_valid_member_order() {{
-    bool inside_endianness_susceptible_region{{}};
-    bool inside_endianness_resistant_region{{}};
+  static consteval bool is_valid_member_order() {
+    bool inside_endianness_susceptible_region{};
+    bool inside_endianness_resistant_region{};
 
-    return ([&] {{
-      const bool valid_endianness_susceptible_region{{!inside_endianness_susceptible_region || !noncontiguous<typename Members::type>}};
-      const bool valid_endianness_resistant_region{{!inside_endianness_resistant_region || endianness_resistant<typename Members::type>}};
+    return ([&] {
+      const bool valid_endianness_susceptible_region{!inside_endianness_susceptible_region || !noncontiguous<typename Members::type>};
+      const bool valid_endianness_resistant_region{!inside_endianness_resistant_region || endianness_resistant<typename Members::type>};
 
       inside_endianness_susceptible_region = endianness_susceptible<typename Members::type>;
       inside_endianness_resistant_region = endianness_resistant<typename Members::type>;
       return valid_endianness_susceptible_region && valid_endianness_resistant_region;
-    }}() && ...);
-  }}
+    }() && ...);
+  }
 
-  static consteval std::size_t find_region_offset(const auto is_before_offset) {{
+  static consteval std::size_t find_region_offset(const auto is_before_offset) {
     static_assert(is_valid_member_order(), "Struct members must follow the order: noncontiguous, endianness susceptible, and endianness resistant");
-    std::size_t offset{{}};
-    std::size_t size{{}};
+    std::size_t offset{};
+    std::size_t size{};
 
-    const bool last_member_is_before_offset{{([&] {{
+    const bool last_member_is_before_offset{([&] {
       offset = Members::OFFSET;
       size = sizeof(typename Members::type);
       return is_before_offset.template operator()<typename Members::type>();
-    }}() && ...)}};
+    }() && ...)};
 
     return last_member_is_before_offset ? offset + size : offset;
-  }}
-}};
+  }
+};
 
 template<class T = void, class... Ts>
-struct vendor {{
+struct vendor {
   template<class Identifier>
-  static consteval auto find_type_linked_to() {{
-    if constexpr (std::derived_from<T, std::type_identity<Identifier>>) {{
-      return T{{}};
-    }} else if constexpr (requires {{ typename T::template get<Identifier>; }}) {{
-      return typename T::template get<Identifier>{{}};
-    }} else if constexpr (sizeof...(Ts) > 0) {{
+  static consteval auto find_type_linked_to() {
+    if constexpr (std::derived_from<T, std::type_identity<Identifier>>) {
+      return T{};
+    } else if constexpr (requires { typename T::template get<Identifier>; }) {
+      return typename T::template get<Identifier>{};
+    } else if constexpr (sizeof...(Ts) > 0) {
       return vendor<Ts...>::template find_type_linked_to<Identifier>();
-    }}
-  }}
+    }
+  }
 
   template<class Identifier>
   requires (!std::is_void_v<decltype(find_type_linked_to<Identifier>())>)
   using get = decltype(find_type_linked_to<Identifier>());
-}};
+};
 
 template<class... StructRegisters>
-struct group_register : vendor<StructRegisters...> {{
-  static consteval auto get_reflection() {{
-    std::array<std::uint8_t, (StructRegisters::REFLECTION_VALUES_SIZE_BYTES + ... + 0)> reflection{{}};
-    std::ranges::subrange subrange{{reflection}};
+struct group_register : vendor<StructRegisters...> {
+  static consteval auto get_reflection() {
+    std::array<std::uint8_t, (StructRegisters::REFLECTION_VALUES_SIZE_BYTES + ... + 0)> reflection{};
+    std::ranges::subrange subrange{reflection};
 
-    for (const std::initializer_list<std::size_t> values : {{StructRegisters::REFLECTION_VALUES...}}) {{
-      for (const std::size_t value : values) {{
-        const std::size_t little_endian_value{{std::endian::native == std::endian::little ? value : std::byteswap(value)}};
-        const auto serialized_value{{std::bit_cast<std::array<std::uint8_t, sizeof(little_endian_value)>>(little_endian_value)}};
+    for (const std::initializer_list<std::size_t> values : {StructRegisters::REFLECTION_VALUES...}) {
+      for (const std::size_t value : values) {
+        const std::size_t little_endian_value{std::endian::native == std::endian::little ? value : std::byteswap(value)};
+        const std::array serialized_value{std::bit_cast<std::array<std::uint8_t, sizeof(little_endian_value)>>(little_endian_value)};
 
         std::ranges::copy(serialized_value, subrange.begin());
         subrange.advance(serialized_value.size());
-      }}
-    }}
+      }
+    }
 
     return reflection;
-  }}
-}};
+  }
+};
 
-using registry = vendor<{}
->;
+using registry = vendor<
+)"};
+
+constexpr std::string_view END{R"(>;
 
 template<typename T, std::integral CurrentIntegral, std::integral... Integrals>
-void swap_bytes(const auto& in, auto& out) {{
-  if constexpr (sizeof(T) == sizeof(CurrentIntegral)) {{
+void swap_bytes(const auto& in, auto& out) {
+  if constexpr (sizeof(T) == sizeof(CurrentIntegral)) {
     reinterpret_cast<CurrentIntegral&>(out) = std::byteswap(reinterpret_cast<const CurrentIntegral&>(in));
-  }} else if constexpr (sizeof...(Integrals) > 0) {{
+  } else if constexpr (sizeof...(Integrals) > 0) {
     swap_bytes<T, Integrals...>(in, out);
-  }} else {{
+  } else {
     static_assert(false, "Cannot byte swap a type with an unsupported size");
-  }}
-}}
+  }
+}
 
 template<typename T>
-void swap_bytes(const std::size_t offset, const auto& in, auto& out) {{
-  const auto& in_pos{{reinterpret_cast<const std::byte*>(&in)[offset]}};
-  auto& out_pos{{reinterpret_cast<std::byte*>(&out)[offset]}};
+void swap_bytes(const std::size_t offset, const auto& in, auto& out) {
+  const auto& in_pos{reinterpret_cast<const std::byte*>(&in)[offset]};
+  auto& out_pos{reinterpret_cast<std::byte*>(&out)[offset]};
 
   swap_bytes<T, std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t>(in_pos, out_pos);
-}}
+}
 
 // TODO: disallow endianness susceptible class types and allow multidimensional arrays
 template<instance_of<member> Member>
-void swap_bytes_if_endianness_susceptible(const auto& in, auto& out) {{
-  if constexpr (instance_of<typename Member::type, std::array> && endianness_susceptible<typename Member::type>) {{
-    for (std::size_t i{{}}; i < sizeof(typename Member::type); i += sizeof(typename Member::type::value_type)) {{
+void swap_bytes_if_endianness_susceptible(const auto& in, auto& out) {
+  if constexpr (instance_of<typename Member::type, std::array> && endianness_susceptible<typename Member::type>) {
+    for (std::size_t i{}; i < sizeof(typename Member::type); i += sizeof(typename Member::type::value_type)) {
       swap_bytes<typename Member::type::value_type>(Member::OFFSET + i, in, out);
-    }}
-  }} else if constexpr (endianness_susceptible<typename Member::type>) {{
+    }
+  } else if constexpr (endianness_susceptible<typename Member::type>) {
     swap_bytes<typename Member::type>(Member::OFFSET, in, out);
-  }}
-}}
-}} // namespace
-}} // namespace mbsl
+  }
+}
+} // namespace
+} // namespace mbsl
 )"};
 } // namespace library_template

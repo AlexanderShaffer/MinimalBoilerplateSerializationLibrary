@@ -44,6 +44,6 @@ bool add_struct(const std::string_view group_name, const std::string_view struct
 
 void write_library() {
   std::ofstream out{"mbsl.cppm"};
-  std::print(out, library_template::FORMAT_STRING, "", "");
+  std::print(out, "{}{}{}", library_template::BEGINNING, library_template::MIDDLE, library_template::END);
 }
 } // namespace writer

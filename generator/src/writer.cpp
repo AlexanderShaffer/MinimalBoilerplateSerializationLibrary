@@ -22,23 +22,19 @@ import library_template;
 namespace writer {
 namespace {
 struct struct_info {
-  std::string_view group_name_{};
-  std::string_view struct_name_{};
   std::string_view endianness_{};
   std::vector<member> members_{};
 };
 
-std::strong_ordering operator<=>(const struct_info& lhs, const struct_info& rhs) {
-  const std::strong_ordering group_ordering{lhs.group_name_ <=> rhs.group_name_};
-  return group_ordering == std::strong_ordering::equal ? lhs.struct_name_ <=> rhs.struct_name_ : group_ordering;
-}
-
-std::flat_set<struct_info> g_structs{};
+using struct_map = std::flat_map<std::string_view, struct_info>;
+std::flat_map<std::string_view, struct_map> g_groups{};
 } // namespace
 
 bool add_struct(const std::string_view group_name, const std::string_view struct_name, const std::string_view endianness,
                 std::vector<member>&& members) {
-  const bool unique{g_structs.emplace(group_name, struct_name, endianness, std::move(members)).second};
+  struct_map& structs{g_groups.try_emplace(group_name).first->second};
+  const bool unique{structs.try_emplace(struct_name, endianness, std::move(members)).second};
+
   return unique;
 }
 

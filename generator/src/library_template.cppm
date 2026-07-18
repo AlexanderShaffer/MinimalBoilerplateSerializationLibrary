@@ -18,9 +18,31 @@
 
 export module library_template;
 import std;
+import :field;
 
 export namespace library_template {
-constexpr std::string_view BEGINNING{R"(/*
+struct replaceable_field_holder {
+  std::string_view separator_{};
+  std::string_view group_name_{};
+  std::string_view struct_name_{};
+  std::string_view struct_endianness_{};
+  std::string_view member_type_{};
+  std::string_view member_name_{};
+};
+
+template<field... FIELDS>
+struct field_collection {
+  static std::array<std::string_view, sizeof...(FIELDS)> resolve(const replaceable_field_holder& state) { return {FIELDS.resolve(state)...}; }
+};
+
+constexpr replaceable_field SEPARATOR{&replaceable_field_holder::separator_};
+constexpr replaceable_field GROUP_NAME{&replaceable_field_holder::group_name_};
+constexpr replaceable_field STRUCT_NAME{&replaceable_field_holder::struct_name_};
+constexpr replaceable_field STRUCT_ENDIANNESS{&replaceable_field_holder::struct_endianness_};
+constexpr replaceable_field MEMBER_TYPE{&replaceable_field_holder::member_type_};
+constexpr replaceable_field MEMBER_NAME{&replaceable_field_holder::member_name_};
+
+constexpr std::string_view TEMPLATE_START{R"(/*
  * This file is part of MinimalBoilerplateSerializationLibrary.
  * Copyright (C) 2026 Alexander Shaffer <alexander.shaffer.623@gmail.com>
  *
@@ -45,10 +67,17 @@ import std;
 
 static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big, "Mixed endianness is unsupported");
 
-export namespace mbsl {
-)"};
+export namespace mbsl {)"};
 
-constexpr std::string_view MIDDLE{R"(} // namespace mbsl
+struct exported_definitions_template {
+  using group_start = field_collection<"\nnamespace ", GROUP_NAME, " {">;
+  using struct_start = field_collection<"\nstruct ", STRUCT_NAME, " {\n">;
+  using member = field_collection<"  ", MEMBER_TYPE, " ", MEMBER_NAME, ";\n">;
+  using struct_end = field_collection<"};\n">;
+  using group_end = field_collection<"} // namespace ", GROUP_NAME, "\n">;
+};
+
+constexpr std::string_view TEMPLATE_BODY{R"(} // namespace mbsl
 
 namespace mbsl {
 namespace {
@@ -62,8 +91,7 @@ template<typename T>
 concept endianness_resistant = std::is_trivially_copyable_v<T> && alignof(T) == 1;
 
 template<typename T, std::size_t OFFSET_>
-requires noncontiguous<T> || endianness_susceptible<T> || endianness_resistant<T>
-struct member : std::type_identity<T> {
+requires noncontiguous<T> || endianness_susceptible<T> || endianness_resistant<T> struct member : std::type_identity<T> {
   static constexpr std::size_t OFFSET{OFFSET_};
 };
 
@@ -119,8 +147,7 @@ struct vendor {
   }
 
   template<class Identifier>
-  requires (!std::is_void_v<decltype(find_type_linked_to<Identifier>())>)
-  using get = decltype(find_type_linked_to<Identifier>());
+  requires (!std::is_void_v<decltype(find_type_linked_to<Identifier>())>) using get = decltype(find_type_linked_to<Identifier>());
 };
 
 template<class... StructRegisters>
@@ -143,10 +170,17 @@ struct group_register : vendor<StructRegisters...> {
   }
 };
 
-using registry = vendor<
-)"};
+using registry = vendor<)"};
 
-constexpr std::string_view END{R"(>;
+struct registry_template {
+  using group_start = field_collection<SEPARATOR, "\n  group_register<\n">;
+  using struct_start = field_collection<SEPARATOR, "    struct_register<", GROUP_NAME, "::", STRUCT_NAME, ", std::endian::", STRUCT_ENDIANNESS>;
+  using member = field_collection<",\n      member<", MEMBER_TYPE, ", offsetof(", GROUP_NAME, "::", STRUCT_NAME, ", ", MEMBER_NAME, ")>">;
+  using struct_end = field_collection<"\n    >">;
+  using group_end = field_collection<"\n  >\n">;
+};
+
+constexpr std::string_view TEMPLATE_END{R"(>;
 
 template<typename T, std::integral CurrentIntegral, std::integral... Integrals>
 void swap_bytes(const auto& in, auto& out) {

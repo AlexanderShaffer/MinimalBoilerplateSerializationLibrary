@@ -11,6 +11,7 @@ BreakTemplateDeclarations: Yes
 IndentRequiresClause: false
 IndentExportBlock: false
 SpaceBeforeParens: Custom
+RequiresClausePosition: SingleLine
 SpaceBeforeParensOptions:
   AfterRequiresInClause: true
   AfterRequiresInExpression: true

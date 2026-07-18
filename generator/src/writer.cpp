@@ -21,13 +21,13 @@ import library_template;
 
 namespace writer {
 namespace {
-struct struct_info {
+struct packet {
   std::string_view endianness_{};
   std::vector<member> members_{};
 };
 
-using struct_map = std::flat_map<std::string_view, struct_info>;
-std::flat_map<std::string_view, struct_map> g_group_map{};
+using packet_map = std::flat_map<std::string_view, packet>;
+std::flat_map<std::string_view, packet_map> g_group_map{};
 
 class library_writer {
 public:
@@ -35,22 +35,22 @@ public:
 
   template<typename FieldTemplate>
   void write_field_template() {
-    for (const auto& [group_name, struct_map] : g_group_map) {
+    for (const auto& [group_name, packet_map] : g_group_map) {
       m_replaceable_field_holder.group_name_ = group_name;
       write_field_collection<typename FieldTemplate::group_start>();
 
-      for (const auto& [struct_name, struct_info] : struct_map) {
-        m_replaceable_field_holder.struct_name_ = struct_name;
-        m_replaceable_field_holder.struct_endianness_ = struct_info.endianness_;
-        write_field_collection<typename FieldTemplate::struct_start>();
+      for (const auto& [packet_name, packet] : packet_map) {
+        m_replaceable_field_holder.packet_name_ = packet_name;
+        m_replaceable_field_holder.packet_endianness_ = packet.endianness_;
+        write_field_collection<typename FieldTemplate::packet_start>();
 
-        for (const auto& [type, member_name] : struct_info.members_) {
-          m_replaceable_field_holder.member_type_ = type;
+        for (const auto& [member_type, member_name] : packet.members_) {
+          m_replaceable_field_holder.member_type_ = member_type;
           m_replaceable_field_holder.member_name_ = member_name;
           write_field_collection<typename FieldTemplate::member>();
         }
 
-        write_field_collection<typename FieldTemplate::struct_end>();
+        write_field_collection<typename FieldTemplate::packet_end>();
       }
 
       write_field_collection<typename FieldTemplate::group_end>();
@@ -68,10 +68,10 @@ private:
 };
 } // namespace
 
-bool add_struct(const std::string_view group_name, const std::string_view struct_name, const std::string_view endianness,
+bool add_packet(const std::string_view group_name, const std::string_view packet_name, const std::string_view endianness,
                 std::vector<member>&& members) {
-  struct_map& struct_map{g_group_map.try_emplace(group_name).first->second};
-  const bool unique{struct_map.try_emplace(struct_name, endianness, std::move(members)).second};
+  packet_map& packet_map{g_group_map.try_emplace(group_name).first->second};
+  const bool unique{packet_map.try_emplace(packet_name, endianness, std::move(members)).second};
 
   return unique;
 }

@@ -24,21 +24,23 @@ export namespace library_template {
 struct replaceable_field_holder {
   std::string_view separator_{};
   std::string_view group_name_{};
-  std::string_view struct_name_{};
-  std::string_view struct_endianness_{};
+  std::string_view packet_name_{};
+  std::string_view packet_endianness_{};
   std::string_view member_type_{};
   std::string_view member_name_{};
 };
 
 template<field... FIELDS>
 struct field_collection {
-  static std::array<std::string_view, sizeof...(FIELDS)> resolve(const replaceable_field_holder& state) { return {FIELDS.resolve(state)...}; }
+  static std::array<std::string_view, sizeof...(FIELDS)> resolve(const replaceable_field_holder& replaceable_field_holder) {
+    return {FIELDS.resolve(replaceable_field_holder)...};
+  }
 };
 
 constexpr replaceable_field SEPARATOR{&replaceable_field_holder::separator_};
 constexpr replaceable_field GROUP_NAME{&replaceable_field_holder::group_name_};
-constexpr replaceable_field STRUCT_NAME{&replaceable_field_holder::struct_name_};
-constexpr replaceable_field STRUCT_ENDIANNESS{&replaceable_field_holder::struct_endianness_};
+constexpr replaceable_field PACKET_NAME{&replaceable_field_holder::packet_name_};
+constexpr replaceable_field PACKET_ENDIANNESS{&replaceable_field_holder::packet_endianness_};
 constexpr replaceable_field MEMBER_TYPE{&replaceable_field_holder::member_type_};
 constexpr replaceable_field MEMBER_NAME{&replaceable_field_holder::member_name_};
 
@@ -71,9 +73,9 @@ export namespace mbsl {)"};
 
 struct exported_definitions_template {
   using group_start = field_collection<"\nnamespace ", GROUP_NAME, " {">;
-  using struct_start = field_collection<"\nstruct ", STRUCT_NAME, " {\n">;
+  using packet_start = field_collection<"\nstruct ", PACKET_NAME, " {\n">;
   using member = field_collection<"  ", MEMBER_TYPE, " ", MEMBER_NAME, ";\n">;
-  using struct_end = field_collection<"};\n">;
+  using packet_end = field_collection<"};\n">;
   using group_end = field_collection<"} // namespace ", GROUP_NAME, "\n">;
 };
 
@@ -98,9 +100,9 @@ requires noncontiguous<T> || endianness_susceptible<T> || endianness_resistant<T
 template<typename T, template<typename, std::size_t> class Template>
 concept instance_of = requires (T t) { Template(t); };
 
-template<class Struct, std::endian ENDIANNESS, instance_of<member>... Members>
-struct struct_register : std::type_identity<Struct> {
-  static constexpr std::initializer_list<std::size_t> REFLECTION_VALUES{Members::OFFSET..., sizeof(typename Members::type)..., sizeof(Struct)};
+template<class PacketType, std::endian ENDIANNESS, instance_of<member>... Members>
+struct packet : std::type_identity<PacketType> {
+  static constexpr std::initializer_list<std::size_t> REFLECTION_VALUES{Members::OFFSET..., sizeof(typename Members::type)..., sizeof(PacketType)};
   static constexpr std::size_t REFLECTION_VALUES_SIZE_BYTES{REFLECTION_VALUES.size() * sizeof(typename decltype(REFLECTION_VALUES)::value_type)};
 
 private:
@@ -119,7 +121,7 @@ private:
   }
 
   static consteval std::size_t find_region_offset(const auto is_before_offset) {
-    static_assert(is_valid_member_order(), "Struct members must follow the order: noncontiguous, endianness susceptible, and endianness resistant");
+    static_assert(is_valid_member_order(), "Packet members must follow the order: noncontiguous, endianness susceptible, and endianness resistant");
     std::size_t offset{};
     std::size_t size{};
 
@@ -150,13 +152,13 @@ struct vendor {
   requires (!std::is_void_v<decltype(find_type_linked_to<Identifier>())>) using get = decltype(find_type_linked_to<Identifier>());
 };
 
-template<class... StructRegisters>
-struct group_register : vendor<StructRegisters...> {
+template<class... Packets>
+struct group : vendor<Packets...> {
   static consteval auto get_reflection() {
-    std::array<std::uint8_t, (StructRegisters::REFLECTION_VALUES_SIZE_BYTES + ... + 0)> reflection{};
+    std::array<std::uint8_t, (Packets::REFLECTION_VALUES_SIZE_BYTES + ... + 0)> reflection{};
     std::ranges::subrange subrange{reflection};
 
-    for (const std::initializer_list<std::size_t> values : {StructRegisters::REFLECTION_VALUES...}) {
+    for (const std::initializer_list<std::size_t> values : {Packets::REFLECTION_VALUES...}) {
       for (const std::size_t value : values) {
         const std::size_t little_endian_value{std::endian::native == std::endian::little ? value : std::byteswap(value)};
         const std::array serialized_value{std::bit_cast<std::array<std::uint8_t, sizeof(little_endian_value)>>(little_endian_value)};
@@ -173,10 +175,10 @@ struct group_register : vendor<StructRegisters...> {
 using registry = vendor<)"};
 
 struct registry_template {
-  using group_start = field_collection<SEPARATOR, "\n  group_register<\n">;
-  using struct_start = field_collection<SEPARATOR, "    struct_register<", GROUP_NAME, "::", STRUCT_NAME, ", std::endian::", STRUCT_ENDIANNESS>;
-  using member = field_collection<",\n      member<", MEMBER_TYPE, ", offsetof(", GROUP_NAME, "::", STRUCT_NAME, ", ", MEMBER_NAME, ")>">;
-  using struct_end = field_collection<"\n    >">;
+  using group_start = field_collection<SEPARATOR, "\n  group<\n">;
+  using packet_start = field_collection<SEPARATOR, "    packet<", GROUP_NAME, "::", PACKET_NAME, ", std::endian::", PACKET_ENDIANNESS>;
+  using member = field_collection<",\n      member<", MEMBER_TYPE, ", offsetof(", GROUP_NAME, "::", PACKET_NAME, ", ", MEMBER_NAME, ")>">;
+  using packet_end = field_collection<"\n    >">;
   using group_end = field_collection<"\n  >\n">;
 };
 

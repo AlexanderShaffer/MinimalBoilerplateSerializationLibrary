@@ -31,7 +31,7 @@ struct field {
   replaceable_field replaceable_field_{};
 
   consteval field(const char (&string)[SIZE]) requires (!REPLACEABLE) { std::copy_n(string, string_.size(), string_.begin()); }
-  consteval field(std::string_view replaceable_field_holder::* const state_member) : replaceable_field_{state_member} {}
+  consteval field(const replaceable_field replaceable_field) : replaceable_field_{replaceable_field} {}
 
   [[nodiscard]] std::string_view resolve(const replaceable_field_holder& replaceable_field_holder) const {
     if constexpr (REPLACEABLE) {

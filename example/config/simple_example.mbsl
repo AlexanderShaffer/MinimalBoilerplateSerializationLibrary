@@ -19,11 +19,11 @@
 // Assigns the group of all structs that follow.
 group example_group
 
-// Assigns the endianness of all structs that follow. Valid values are little, big, and native. The default is little.
+// Assigns the endianness of all packets that follow. Valid values are little, big, and native. The default is little.
 endianness big
 
 // Defines a C++ struct in the mbsl::example_group namespace with automatically generated serialization and deserialization functions.
-struct example_struct {
+packet example_packet {
   double x_
   int y_
 }

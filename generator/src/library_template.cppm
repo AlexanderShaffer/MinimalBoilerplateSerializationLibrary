@@ -22,7 +22,7 @@ import :field;
 
 export namespace library_template {
 struct replaceable_field_holder {
-  std::string_view separator_{};
+  std::string_view comma_{};
   std::string_view group_name_{};
   std::string_view packet_name_{};
   std::string_view packet_endianness_{};
@@ -37,7 +37,7 @@ struct field_collection {
   }
 };
 
-constexpr replaceable_field SEPARATOR{&replaceable_field_holder::separator_};
+constexpr replaceable_field COMMA{&replaceable_field_holder::comma_};
 constexpr replaceable_field GROUP_NAME{&replaceable_field_holder::group_name_};
 constexpr replaceable_field PACKET_NAME{&replaceable_field_holder::packet_name_};
 constexpr replaceable_field PACKET_ENDIANNESS{&replaceable_field_holder::packet_endianness_};
@@ -175,14 +175,15 @@ struct group : vendor<Packets...> {
 using registry = vendor<)"};
 
 struct registry_template {
-  using group_start = field_collection<SEPARATOR, "\n  group<\n">;
-  using packet_start = field_collection<SEPARATOR, "    packet<", GROUP_NAME, "::", PACKET_NAME, ", std::endian::", PACKET_ENDIANNESS>;
+  using group_start = field_collection<COMMA, "\n  group<">;
+  using packet_start = field_collection<COMMA, "\n    packet<", GROUP_NAME, "::", PACKET_NAME, ", std::endian::", PACKET_ENDIANNESS>;
   using member = field_collection<",\n      member<", MEMBER_TYPE, ", offsetof(", GROUP_NAME, "::", PACKET_NAME, ", ", MEMBER_NAME, ")>">;
   using packet_end = field_collection<"\n    >">;
-  using group_end = field_collection<"\n  >\n">;
+  using group_end = field_collection<"\n  >">;
 };
 
-constexpr std::string_view TEMPLATE_END{R"(>;
+constexpr std::string_view TEMPLATE_END{R"(
+>;
 
 template<typename T, std::integral CurrentIntegral, std::integral... Integrals>
 void swap_bytes(const auto& in, auto& out) {

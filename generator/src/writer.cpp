@@ -35,13 +35,15 @@ public:
 
   template<typename FieldTemplate>
   void write_field_template() {
-    for (const auto& [group_name, packet_map] : g_group_map) {
+    for (bool first_group{true}; const auto& [group_name, packet_map] : g_group_map) {
       m_replaceable_field_holder.group_name_ = group_name;
+      calculate_comma_field(first_group);
       write_field_collection<typename FieldTemplate::group_start>();
 
-      for (const auto& [packet_name, packet] : packet_map) {
+      for (bool first_struct{true}; const auto& [packet_name, packet] : packet_map) {
         m_replaceable_field_holder.packet_name_ = packet_name;
         m_replaceable_field_holder.packet_endianness_ = packet.endianness_;
+        calculate_comma_field(first_struct);
         write_field_collection<typename FieldTemplate::packet_start>();
 
         for (const auto& [member_type, member_name] : packet.members_) {
@@ -60,6 +62,11 @@ public:
 private:
   std::ofstream m_ofstream{"mbsl.cppm"};
   library_template::replaceable_field_holder m_replaceable_field_holder{};
+
+  void calculate_comma_field(bool& first_list_item) {
+    m_replaceable_field_holder.comma_ = first_list_item ? "" : ",\n";
+    first_list_item = false;
+  }
 
   template<typename FieldCollection>
   void write_field_collection() {

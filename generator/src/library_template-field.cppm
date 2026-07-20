@@ -21,24 +21,28 @@ import std;
 
 namespace library_template {
 export struct replaceable_field_holder;
-using replaceable_field = std::string_view replaceable_field_holder::*;
 
-template<std::size_t SIZE = 0>
+template<std::size_t SIZE>
 struct field {
-  static constexpr bool REPLACEABLE{SIZE == 0};
+  std::array<char, SIZE - 1> string_{};
 
-  std::array<char, SIZE == 0 ? 0 : SIZE - 1> string_{};
-  replaceable_field replaceable_field_{};
+  consteval field(const char (&string)[SIZE]) { std::copy_n(string, string_.size(), string_.begin()); }
 
-  consteval field(const char (&string)[SIZE]) requires (!REPLACEABLE) { std::copy_n(string, string_.size(), string_.begin()); }
-  consteval field(const replaceable_field replaceable_field) : replaceable_field_{replaceable_field} {}
+  [[nodiscard]] std::string_view resolve([[maybe_unused]] const replaceable_field_holder& replaceable_field_holder) const {
+    return std::string_view{string_};
+  }
+};
+
+using replaceable_field = field<0>;
+
+template<>
+struct field<0> {
+  std::string_view replaceable_field_holder::* replaceable_field_{};
+
+  explicit consteval field(std::string_view replaceable_field_holder::* const replaceable_field) : replaceable_field_{replaceable_field} {}
 
   [[nodiscard]] std::string_view resolve(const replaceable_field_holder& replaceable_field_holder) const {
-    if constexpr (REPLACEABLE) {
-      return replaceable_field_holder.*replaceable_field_;
-    } else {
-      return std::string_view{string_};
-    }
+    return replaceable_field_holder.*replaceable_field_;
   }
 };
 } // namespace library_template

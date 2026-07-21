@@ -84,21 +84,30 @@ constexpr std::string_view TEMPLATE_BODY{R"(} // namespace mbsl
 namespace mbsl {
 namespace {
 template<typename T>
-concept noncontiguous = false; // TODO: Implement this concept
-
-template<typename T>
-concept endianness_susceptible = std::is_trivially_copyable_v<T> && !std::is_pointer_v<T> && !std::is_member_pointer_v<T> && alignof(T) > 1;
-
-template<typename T>
-concept endianness_resistant = std::is_trivially_copyable_v<T> && alignof(T) == 1;
-
-template<typename T, std::size_t OFFSET_>
-requires noncontiguous<T> || endianness_susceptible<T> || endianness_resistant<T> struct member : std::type_identity<T> {
-  static constexpr std::size_t OFFSET{OFFSET_};
-};
+concept serializable = false; // TODO: Implement this concept
 
 template<typename T, template<typename, std::size_t> class Template>
 concept instance_of = requires (T t) { Template(t); };
+
+template<typename T>
+consteval bool is_numerical() {
+  if constexpr (instance_of<T, std::array>) {
+    return is_numerical<typename T::value_type>();
+  } else {
+    return std::is_arithmetic_v<T> || std::is_enum_v<T>;
+  }
+}
+
+template<typename T>
+concept endianness_susceptible = alignof(T) > 1 && is_numerical<T>();
+
+template<typename T>
+concept endianness_resistant = alignof(T) == 1 && is_numerical<T>();
+
+template<typename T, std::size_t OFFSET_>
+requires serializable<T> || endianness_susceptible<T> || endianness_resistant<T> struct member : std::type_identity<T> {
+  static constexpr std::size_t OFFSET{OFFSET_};
+};
 
 template<class PacketType, std::endian ENDIANNESS, instance_of<member>... Members>
 struct packet : std::type_identity<PacketType> {
@@ -111,7 +120,7 @@ private:
     bool inside_endianness_resistant_region{};
 
     return ([&] {
-      const bool valid_endianness_susceptible_region{!inside_endianness_susceptible_region || !noncontiguous<typename Members::type>};
+      const bool valid_endianness_susceptible_region{!inside_endianness_susceptible_region || !serializable<typename Members::type>};
       const bool valid_endianness_resistant_region{!inside_endianness_resistant_region || endianness_resistant<typename Members::type>};
 
       inside_endianness_susceptible_region = endianness_susceptible<typename Members::type>;
@@ -121,7 +130,7 @@ private:
   }
 
   static consteval std::size_t find_region_offset(const auto is_before_offset) {
-    static_assert(is_valid_member_order(), "Packet members must follow the order: noncontiguous, endianness susceptible, and endianness resistant");
+    static_assert(is_valid_member_order(), "Packet members must follow the order: serializable, endianness susceptible, and endianness resistant");
     std::size_t offset{};
     std::size_t size{};
 

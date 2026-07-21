@@ -105,16 +105,61 @@ template<typename T>
 concept endianness_resistant = alignof(T) == 1 && is_numerical<T>();
 
 template<typename T, std::size_t OFFSET_>
-requires serializable<T> || endianness_susceptible<T> || endianness_resistant<T> struct member : std::type_identity<T> {
+requires serializable<T> || endianness_susceptible<T> || endianness_resistant<T>
+struct member : std::type_identity<T> {
   static constexpr std::size_t OFFSET{OFFSET_};
 };
 
-template<class PacketType, std::endian ENDIANNESS, instance_of<member>... Members>
-struct packet : std::type_identity<PacketType> {
-  static constexpr std::initializer_list<std::size_t> REFLECTION_VALUES{Members::OFFSET..., sizeof(typename Members::type)..., sizeof(PacketType)};
+template<typename Member, std::endian ENDIANNESS>
+concept member_with_invalid_endianness =
+  instance_of<Member, member> && std::endian::native != ENDIANNESS && endianness_susceptible<typename Member::type>;
+
+template<typename ArrayMember, std::endian ENDIANNESS>
+concept array_member_with_invalid_endianness =
+  member_with_invalid_endianness<ArrayMember, ENDIANNESS> && instance_of<typename ArrayMember::type, std::array>;
+
+template<class PacketStruct, std::endian ENDIANNESS, instance_of<member>... Members>
+struct packet : std::type_identity<PacketStruct> {
+  static constexpr std::initializer_list<std::size_t> REFLECTION_VALUES{Members::OFFSET..., sizeof(typename Members::type)..., sizeof(PacketStruct)};
   static constexpr std::size_t REFLECTION_VALUES_SIZE_BYTES{REFLECTION_VALUES.size() * sizeof(typename decltype(REFLECTION_VALUES)::value_type)};
 
 private:
+  template<instance_of<member> /* Member */>
+  static constexpr void serialize_to(const PacketStruct& /* packet */, auto& /* dest */) {}
+
+  template<instance_of<member> Member, std::integral CurrentIntegral, std::integral... Integrals>
+  static consteval auto to_integral() {
+    if constexpr (sizeof(typename Member::type) == sizeof(CurrentIntegral)) {
+      return CurrentIntegral{};
+    } else if (sizeof...(Integrals) > 0) {
+      return to_integral<Member, Integrals...>();
+    }
+  }
+
+  template<member_with_invalid_endianness<ENDIANNESS> Member>
+  static constexpr void serialize_to(const PacketStruct& packet, auto& dest) {
+    using integral = decltype(to_integral<Member, std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t>());
+    static_assert(!std::is_void_v<integral>, "Member type sizes must be powers of 2 and at most 8");
+
+    const std::byte& byte_src{reinterpret_cast<const std::byte*>(&packet)[Member::OFFSET]};
+    std::byte& byte_dest{reinterpret_cast<std::byte*>(&dest)[Member::OFFSET]};
+
+    reinterpret_cast<integral&>(byte_dest) = std::byteswap(reinterpret_cast<const integral&>(byte_src));
+  }
+
+  template<array_member_with_invalid_endianness<ENDIANNESS> ArrayMember, std::size_t INDEX = 0>
+  static constexpr void serialize_to(const PacketStruct& packet, auto& dest) {
+    using array_type = ArrayMember::type;
+    using element_type = array_type::value_type;
+
+    static constexpr std::size_t ELEMENT_OFFSET{ArrayMember::OFFSET + (INDEX * sizeof(element_type))};
+    serialize_to<member<element_type, ELEMENT_OFFSET>>(packet, dest);
+
+    if constexpr (INDEX < std::tuple_size_v<array_type>) {
+      serialize_to<ArrayMember, INDEX + 1>(packet, dest);
+    }
+  }
+
   static consteval bool is_valid_member_order() {
     bool inside_endianness_susceptible_region{};
     bool inside_endianness_resistant_region{};
@@ -158,7 +203,8 @@ struct vendor {
   }
 
   template<class Identifier>
-  requires (!std::is_void_v<decltype(find_type_linked_to<Identifier>())>) using get = decltype(find_type_linked_to<Identifier>());
+  requires (!std::is_void_v<decltype(find_type_linked_to<Identifier>())>)
+  using get = decltype(find_type_linked_to<Identifier>());
 };
 
 template<class... Packets>
@@ -193,37 +239,6 @@ struct registry_template {
 
 constexpr std::string_view TEMPLATE_END{R"(
 >;
-
-template<typename T, std::integral CurrentIntegral, std::integral... Integrals>
-void swap_bytes(const auto& in, auto& out) {
-  if constexpr (sizeof(T) == sizeof(CurrentIntegral)) {
-    reinterpret_cast<CurrentIntegral&>(out) = std::byteswap(reinterpret_cast<const CurrentIntegral&>(in));
-  } else if constexpr (sizeof...(Integrals) > 0) {
-    swap_bytes<T, Integrals...>(in, out);
-  } else {
-    static_assert(false, "Cannot byte swap a type with an unsupported size");
-  }
-}
-
-template<typename T>
-void swap_bytes(const std::size_t offset, const auto& in, auto& out) {
-  const auto& in_pos{reinterpret_cast<const std::byte*>(&in)[offset]};
-  auto& out_pos{reinterpret_cast<std::byte*>(&out)[offset]};
-
-  swap_bytes<T, std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t>(in_pos, out_pos);
-}
-
-// TODO: disallow endianness susceptible class types and allow multidimensional arrays
-template<instance_of<member> Member>
-void swap_bytes_if_endianness_susceptible(const auto& in, auto& out) {
-  if constexpr (instance_of<typename Member::type, std::array> && endianness_susceptible<typename Member::type>) {
-    for (std::size_t i{}; i < sizeof(typename Member::type); i += sizeof(typename Member::type::value_type)) {
-      swap_bytes<typename Member::type::value_type>(Member::OFFSET + i, in, out);
-    }
-  } else if constexpr (endianness_susceptible<typename Member::type>) {
-    swap_bytes<typename Member::type>(Member::OFFSET, in, out);
-  }
-}
 } // namespace
 } // namespace mbsl
 )"};

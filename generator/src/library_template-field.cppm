@@ -20,7 +20,7 @@ export module library_template:field;
 import std;
 
 namespace library_template {
-export struct replaceable_field_holder;
+export struct field_arg_holder;
 
 template<std::size_t SIZE>
 struct field {
@@ -28,21 +28,15 @@ struct field {
 
   consteval field(const char (&string)[SIZE]) { std::copy_n(string, string_.size(), string_.begin()); }
 
-  [[nodiscard]] std::string_view resolve([[maybe_unused]] const replaceable_field_holder& replaceable_field_holder) const {
-    return std::string_view{string_};
-  }
+  [[nodiscard]] std::string_view resolve([[maybe_unused]] const field_arg_holder& field_arg_holder) const { return std::string_view{string_}; }
 };
 
 using replaceable_field = field<0>;
 
 template<>
 struct field<0> {
-  std::string_view replaceable_field_holder::* replaceable_field_{};
+  std::string_view field_arg_holder::* field_param_{};
 
-  explicit consteval field(std::string_view replaceable_field_holder::* const replaceable_field) : replaceable_field_{replaceable_field} {}
-
-  [[nodiscard]] std::string_view resolve(const replaceable_field_holder& replaceable_field_holder) const {
-    return replaceable_field_holder.*replaceable_field_;
-  }
+  [[nodiscard]] std::string_view resolve(const field_arg_holder& field_arg_holder) const { return field_arg_holder.*field_param_; }
 };
 } // namespace library_template

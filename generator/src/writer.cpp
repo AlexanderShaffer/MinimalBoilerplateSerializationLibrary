@@ -36,19 +36,19 @@ public:
   template<typename FieldTemplate>
   void write_field_template() {
     for (bool first_group{true}; const auto& [group_name, packet_map] : g_group_map) {
-      m_replaceable_field_holder.group_name_ = group_name;
-      calculate_comma_field(first_group);
+      m_field_arg_holder.group_name_ = group_name;
+      replace_comma_field(first_group);
       write_field_collection<typename FieldTemplate::group_start>();
 
       for (bool first_struct{true}; const auto& [packet_name, packet] : packet_map) {
-        m_replaceable_field_holder.packet_name_ = packet_name;
-        m_replaceable_field_holder.packet_endianness_ = packet.endianness_;
-        calculate_comma_field(first_struct);
+        m_field_arg_holder.packet_name_ = packet_name;
+        m_field_arg_holder.packet_endianness_ = packet.endianness_;
+        replace_comma_field(first_struct);
         write_field_collection<typename FieldTemplate::packet_start>();
 
         for (const auto& [member_type, member_name] : packet.members_) {
-          m_replaceable_field_holder.member_type_ = member_type;
-          m_replaceable_field_holder.member_name_ = member_name;
+          m_field_arg_holder.member_type_ = member_type;
+          m_field_arg_holder.member_name_ = member_name;
           write_field_collection<typename FieldTemplate::member>();
         }
 
@@ -61,16 +61,16 @@ public:
 
 private:
   std::ofstream m_ofstream{"mbsl.cppm"};
-  library_template::replaceable_field_holder m_replaceable_field_holder{};
+  library_template::field_arg_holder m_field_arg_holder{};
 
-  void calculate_comma_field(bool& first_list_item) {
-    m_replaceable_field_holder.comma_ = first_list_item ? "" : ",\n";
-    first_list_item = false;
+  void replace_comma_field(bool& ignore) {
+    m_field_arg_holder.comma_ = ignore ? "" : ",\n";
+    ignore = false;
   }
 
   template<typename FieldCollection>
   void write_field_collection() {
-    std::ranges::for_each(FieldCollection::resolve(m_replaceable_field_holder), std::bind_front(&library_writer::write_string, this));
+    std::ranges::for_each(FieldCollection::resolve(m_field_arg_holder), std::bind_front(&library_writer::write_string, this));
   }
 };
 } // namespace

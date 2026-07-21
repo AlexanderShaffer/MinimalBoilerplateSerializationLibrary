@@ -21,7 +21,7 @@ import std;
 import :field;
 
 export namespace library_template {
-struct replaceable_field_holder {
+struct field_arg_holder {
   std::string_view comma_{};
   std::string_view group_name_{};
   std::string_view packet_name_{};
@@ -32,17 +32,17 @@ struct replaceable_field_holder {
 
 template<field... FIELDS>
 struct field_collection {
-  static std::array<std::string_view, sizeof...(FIELDS)> resolve(const replaceable_field_holder& replaceable_field_holder) {
-    return {FIELDS.resolve(replaceable_field_holder)...};
+  static std::array<std::string_view, sizeof...(FIELDS)> resolve(const field_arg_holder& field_arg_holder) {
+    return {FIELDS.resolve(field_arg_holder)...};
   }
 };
 
-constexpr replaceable_field COMMA{&replaceable_field_holder::comma_};
-constexpr replaceable_field GROUP_NAME{&replaceable_field_holder::group_name_};
-constexpr replaceable_field PACKET_NAME{&replaceable_field_holder::packet_name_};
-constexpr replaceable_field PACKET_ENDIANNESS{&replaceable_field_holder::packet_endianness_};
-constexpr replaceable_field MEMBER_TYPE{&replaceable_field_holder::member_type_};
-constexpr replaceable_field MEMBER_NAME{&replaceable_field_holder::member_name_};
+constexpr replaceable_field COMMA{.field_param_ = &field_arg_holder::comma_};
+constexpr replaceable_field GROUP_NAME{.field_param_ = &field_arg_holder::group_name_};
+constexpr replaceable_field PACKET_NAME{.field_param_ = &field_arg_holder::packet_name_};
+constexpr replaceable_field PACKET_ENDIANNESS{.field_param_ = &field_arg_holder::packet_endianness_};
+constexpr replaceable_field MEMBER_TYPE{.field_param_ = &field_arg_holder::member_type_};
+constexpr replaceable_field MEMBER_NAME{.field_param_ = &field_arg_holder::member_name_};
 
 constexpr std::string_view TEMPLATE_START{R"(/*
  * This file is part of MinimalBoilerplateSerializationLibrary.

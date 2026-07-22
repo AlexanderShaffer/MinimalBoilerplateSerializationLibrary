@@ -84,7 +84,7 @@ constexpr std::string_view TEMPLATE_BODY{R"(} // namespace mbsl
 namespace mbsl {
 namespace {
 template<typename T>
-concept serializable = false; // TODO: Implement this concept
+concept explicitly_serializable = false; // TODO: Implement this concept
 
 template<typename T, template<typename, std::size_t> class Template>
 concept instance_of = requires (T t) { Template(t); };
@@ -105,7 +105,7 @@ template<typename T>
 concept endianness_resistant = alignof(T) == 1 && is_numerical<T>();
 
 template<typename T, std::size_t OFFSET_>
-requires serializable<T> || endianness_susceptible<T> || endianness_resistant<T>
+requires explicitly_serializable<T> || endianness_susceptible<T> || endianness_resistant<T>
 struct member : std::type_identity<T> {
   static constexpr std::size_t OFFSET{OFFSET_};
 };
@@ -162,7 +162,7 @@ private:
     bool inside_endianness_resistant_region{};
 
     return ([&] {
-      const bool valid_endianness_susceptible_region{!inside_endianness_susceptible_region || !serializable<typename Members::type>};
+      const bool valid_endianness_susceptible_region{!inside_endianness_susceptible_region || !explicitly_serializable<typename Members::type>};
       const bool valid_endianness_resistant_region{!inside_endianness_resistant_region || endianness_resistant<typename Members::type>};
 
       inside_endianness_susceptible_region = endianness_susceptible<typename Members::type>;

@@ -82,7 +82,6 @@ struct exported_definitions_template {
 constexpr std::string_view TEMPLATE_BODY{R"(} // namespace mbsl
 
 namespace mbsl {
-namespace {
 template<typename T>
 concept explicitly_serializable = false; // TODO: Implement this concept
 
@@ -110,10 +109,25 @@ struct member : std::type_identity<T> {
   static constexpr std::size_t OFFSET{OFFSET_};
 };
 
+namespace {
 template<class PacketStruct, std::endian ENDIANNESS, instance_of<member>... Members>
 struct packet : std::type_identity<PacketStruct> {
+private:
+  static constexpr bool NO_EXPLICITLY_SERIALIZABLE_MEMBERS{(!explicitly_serializable<typename Members::type> && ...)};
+
+public:
   static constexpr std::initializer_list<std::size_t> REFLECTION_VALUES{Members::OFFSET..., sizeof(typename Members::type)..., sizeof(PacketStruct)};
   static constexpr std::size_t REFLECTION_VALUES_SIZE_BYTES{REFLECTION_VALUES.size() * sizeof(typename decltype(REFLECTION_VALUES)::value_type)};
+
+  template<typename ReinterpretAs = void>
+  requires NO_EXPLICITLY_SERIALIZABLE_MEMBERS
+  static constexpr auto serialize_in_place(PacketStruct& packet) {
+    (serialize_to<Members>(packet, packet), ...);
+
+    if constexpr (!std::is_void_v<ReinterpretAs>) {
+      return reinterpret_cast<ReinterpretAs*>(&packet);
+    }
+  }
 
 private:
   template<instance_of<member> Member, std::integral CurrentIntegral, std::integral... Integrals>
@@ -242,6 +256,13 @@ struct registry_template {
 constexpr std::string_view TEMPLATE_END{R"(
 >;
 } // namespace
+} // namespace mbsl
+
+export namespace mbsl {
+template<typename ReinterpretAs = void, typename PacketStruct>
+constexpr auto serialize_in_place(PacketStruct& packet) {
+  return registry::get<PacketStruct>::template serialize_in_place<ReinterpretAs>(packet);
+}
 } // namespace mbsl
 )"};
 } // namespace library_template

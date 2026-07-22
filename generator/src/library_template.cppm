@@ -126,12 +126,12 @@ private:
   }
 
   template<instance_of<member> Member>
-  static consteval bool has_valid_endianness() {
-    return std::endian::native == ENDIANNESS || !endianness_susceptible<typename Member::type>;
+  static consteval bool should_serialize() {
+    return std::endian::native != ENDIANNESS && endianness_susceptible<typename Member::type>;
   }
 
   template<instance_of<member> Member>
-  requires (!has_valid_endianness<Member>() && !instance_of<typename Member::type, std::array>)
+  requires (should_serialize<Member>() && !instance_of<typename Member::type, std::array>)
   static constexpr void serialize_to(const PacketStruct& packet, auto& dest) {
     using integral = decltype(to_integral<Member, std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t>());
     static_assert(!std::is_void_v<integral>, "Member type sizes must be powers of 2 and at most 8 bytes");
@@ -143,7 +143,7 @@ private:
   }
 
   template<instance_of<member> ArrayMember, std::size_t INDEX = 0>
-  requires (!has_valid_endianness<ArrayMember>() && instance_of<typename ArrayMember::type, std::array>)
+  requires (should_serialize<ArrayMember>() && instance_of<typename ArrayMember::type, std::array>)
   static constexpr void serialize_to(const PacketStruct& packet, auto& dest) {
     if constexpr (INDEX < std::tuple_size_v<typename ArrayMember::type>) {
       static constexpr std::size_t ELEMENT_OFFSET{ArrayMember::OFFSET + (INDEX * sizeof(typename ArrayMember::type::value_type))};
@@ -154,7 +154,7 @@ private:
   }
 
   template<instance_of<member> Member>
-  requires (has_valid_endianness<Member>())
+  requires (!should_serialize<Member>())
   static constexpr void serialize_to(const PacketStruct& /* packet */, auto& /* dest */) {}
 
   static consteval bool is_valid_member_order() {

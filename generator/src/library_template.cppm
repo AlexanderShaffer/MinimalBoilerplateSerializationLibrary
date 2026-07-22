@@ -205,7 +205,7 @@ struct packet_vendor {
 private:
   template<class PacketStruct>
   static consteval auto find_packet_linked_to() {
-    if constexpr (std::derived_from<T, std::type_identity<PacketStruct>>) {
+    if constexpr (std::derived_from<T, std::type_identity<std::remove_cv_t<PacketStruct>>>) {
       return T{};
     } else if constexpr (requires { typename T::template get<PacketStruct>; }) {
       return typename T::template get<PacketStruct>{};

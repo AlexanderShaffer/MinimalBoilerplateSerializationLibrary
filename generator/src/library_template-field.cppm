@@ -28,7 +28,7 @@ struct field {
 
   consteval field(const char (&string)[SIZE]) { std::copy_n(string, string_.size(), string_.begin()); }
 
-  [[nodiscard]] std::string_view resolve([[maybe_unused]] const field_arg_holder& field_arg_holder) const { return std::string_view{string_}; }
+  [[nodiscard]] std::string_view resolve(const field_arg_holder& /* field_arg_holder */) const { return std::string_view{string_}; }
 };
 
 using replaceable_field = field<0>;

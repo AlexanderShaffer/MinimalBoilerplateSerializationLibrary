@@ -187,25 +187,30 @@ private:
 };
 
 template<class T = void, class... Ts>
-struct vendor {
-  template<class Identifier>
-  static consteval auto find_type_linked_to() {
-    if constexpr (std::derived_from<T, std::type_identity<Identifier>>) {
+struct packet_vendor {
+private:
+  template<class PacketStruct>
+  static consteval auto find_packet_linked_to() {
+    if constexpr (std::derived_from<T, std::type_identity<PacketStruct>>) {
       return T{};
-    } else if constexpr (requires { typename T::template get<Identifier>; }) {
-      return typename T::template get<Identifier>{};
+    } else if constexpr (requires { typename T::template get<PacketStruct>; }) {
+      return typename T::template get<PacketStruct>{};
     } else if constexpr (sizeof...(Ts) > 0) {
-      return vendor<Ts...>::template find_type_linked_to<Identifier>();
+      return packet_vendor<Ts...>::template find_packet_linked_to<PacketStruct>();
     }
   }
 
-  template<class Identifier>
-  requires (!std::is_void_v<decltype(find_type_linked_to<Identifier>())>)
-  using get = decltype(find_type_linked_to<Identifier>());
+  template<class PacketStruct>
+  static constexpr bool PACKET_EXISTS{!std::is_void_v<decltype(find_packet_linked_to<PacketStruct>())>};
+
+public:
+  template<class PacketStruct>
+  requires PACKET_EXISTS<PacketStruct>
+  using get = decltype(find_packet_linked_to<PacketStruct>());
 };
 
 template<class... Packets>
-struct group : vendor<Packets...> {
+struct group : packet_vendor<Packets...> {
   static consteval auto get_reflection() {
     std::array<std::uint8_t, (Packets::REFLECTION_VALUES_SIZE_BYTES + ... + 0)> reflection{};
     std::ranges::subrange subrange{reflection};
@@ -224,7 +229,7 @@ struct group : vendor<Packets...> {
   }
 };
 
-using registry = vendor<)"};
+using registry = packet_vendor<)"};
 
 struct registry_template {
   using group_start = field_collection<COMMA, "\n  group<">;

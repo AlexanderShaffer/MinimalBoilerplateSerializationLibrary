@@ -86,7 +86,7 @@ template<typename T>
 concept explicitly_serializable = false; // TODO: Implement this concept
 
 template<typename T, template<typename, std::size_t> class Template>
-concept instance_of = requires (T t) { Template(t); };
+concept instance_of = requires (T t) { requires std::same_as<T, decltype(Template(t))>; };
 
 template<typename T>
 consteval bool is_numerical() {

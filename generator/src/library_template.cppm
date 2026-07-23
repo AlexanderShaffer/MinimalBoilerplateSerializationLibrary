@@ -121,15 +121,35 @@ public:
 
   template<typename ReinterpretAs = void>
   requires NO_EXPLICITLY_SERIALIZABLE_MEMBERS
-  static constexpr auto serialize_in_place(PacketStruct& packet) {
-    (serialize_to<Members>(packet, packet), ...);
+  static constexpr auto serialize_in_place(PacketStruct& src_dest) {
+    if constexpr (ENDIANNESS_MISMATCH) {
+      (serialize_to_if_endianness_susceptible<Members>(src_dest, src_dest), ...);
+    }
 
     if constexpr (!std::is_void_v<ReinterpretAs>) {
-      return reinterpret_cast<ReinterpretAs*>(&packet);
+      return reinterpret_cast<ReinterpretAs*>(&src_dest);
+    }
+  }
+
+  template<instance_of<std::array> Dest>
+  requires (NO_EXPLICITLY_SERIALIZABLE_MEMBERS && sizeof(Dest) >= sizeof(PacketStruct))
+  static constexpr void serialize_to(const PacketStruct& src, Dest& dest) {
+    static constexpr std::size_t ENDIANNESS_RESISTANT_REGION_END{find_region_offset([]<typename /* T */> { return true; })};
+
+    if constexpr (ENDIANNESS_MISMATCH) {
+      (serialize_to_if_endianness_susceptible<Members>(src, dest), ...);
+
+      static constexpr std::size_t ENDIANNESS_RESISTANT_REGION_START{find_region_offset([]<typename T> { return !endianness_resistant<T>; })};
+      copy<ENDIANNESS_RESISTANT_REGION_START, ENDIANNESS_RESISTANT_REGION_END>(src, dest);
+    } else {
+      static constexpr std::size_t ENDIANNESS_SUSCEPTIBLE_REGION_START{find_region_offset([]<typename T> { return !explicitly_serializable<T>; })};
+      copy<ENDIANNESS_SUSCEPTIBLE_REGION_START, ENDIANNESS_RESISTANT_REGION_END>(src, dest);
     }
   }
 
 private:
+  static constexpr bool ENDIANNESS_MISMATCH{std::endian::native != ENDIANNESS};
+
   template<instance_of<member> Member, std::integral CurrentIntegral, std::integral... Integrals>
   static consteval auto to_integral() {
     if constexpr (sizeof(typename Member::type) == sizeof(CurrentIntegral)) {
@@ -139,39 +159,44 @@ private:
     }
   }
 
-  template<instance_of<member> Member>
-  static consteval bool should_serialize() {
-    return std::endian::native != ENDIANNESS && endianness_susceptible<typename Member::type>;
-  }
+  template<typename ReinterpretAs, std::size_t OFFSET, typename Arg>
+  requires (std::is_pointer_v<ReinterpretAs> || std::is_reference_v<ReinterpretAs>)
+  static ReinterpretAs reinterpret(Arg& arg) {
+    using byte_ptr = std::conditional_t<std::is_const_v<Arg>, const std::byte*, std::byte*>;
+    auto& data_at_offset{reinterpret_cast<byte_ptr>(&arg)[OFFSET]};
 
-  template<instance_of<member> Member>
-  requires (should_serialize<Member>() && !instance_of<typename Member::type, std::array>)
-  static constexpr void serialize_to(const PacketStruct& packet, auto& dest) {
-    using integral = decltype(to_integral<Member, std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t>());
-    static_assert(!std::is_void_v<integral>, "Member type sizes must be powers of 2 and at most 8 bytes");
-
-    const std::byte& byte_src{reinterpret_cast<const std::byte*>(&packet)[Member::OFFSET]};
-    std::byte& byte_dest{reinterpret_cast<std::byte*>(&dest)[Member::OFFSET]};
-
-    reinterpret_cast<integral&>(byte_dest) = std::byteswap(reinterpret_cast<const integral&>(byte_src));
-  }
-
-  template<instance_of<member> ArrayMember, std::size_t INDEX = 0>
-  requires (should_serialize<ArrayMember>() && instance_of<typename ArrayMember::type, std::array>)
-  static constexpr void serialize_to(const PacketStruct& packet, auto& dest) {
-    if constexpr (INDEX < std::tuple_size_v<typename ArrayMember::type>) {
-      static constexpr std::size_t ELEMENT_OFFSET{ArrayMember::OFFSET + (INDEX * sizeof(typename ArrayMember::type::value_type))};
-
-      serialize_to<member<typename ArrayMember::type::value_type, ELEMENT_OFFSET>>(packet, dest);
-      serialize_to<ArrayMember, INDEX + 1>(packet, dest);
+    if constexpr (std::is_pointer_v<ReinterpretAs>) {
+      return reinterpret_cast<ReinterpretAs>(&data_at_offset);
+    } else {
+      return reinterpret_cast<ReinterpretAs>(data_at_offset);
     }
   }
 
   template<instance_of<member> Member>
-  requires (!should_serialize<Member>())
-  static constexpr void serialize_to(const PacketStruct& /* packet */, auto& /* dest */) {}
+  requires (endianness_susceptible<typename Member::type> && !instance_of<typename Member::type, std::array>)
+  static void serialize_to_if_endianness_susceptible(const PacketStruct& src, auto& dest) {
+    using integral = decltype(to_integral<Member, std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t>());
+    static_assert(!std::is_void_v<integral>, "Member type sizes must be powers of 2 and at most 8 bytes");
 
-  static consteval bool is_valid_member_order() {
+    reinterpret<integral&, Member::OFFSET>(dest) = std::byteswap(reinterpret<const integral&, Member::OFFSET>(src));
+  }
+
+  template<instance_of<member> ArrayMember, std::size_t INDEX = 0>
+  requires (endianness_susceptible<typename ArrayMember::type> && instance_of<typename ArrayMember::type, std::array>)
+  static constexpr void serialize_to_if_endianness_susceptible(const PacketStruct& src, auto& dest) {
+    if constexpr (INDEX < std::tuple_size_v<typename ArrayMember::type>) {
+      static constexpr std::size_t ELEMENT_OFFSET{ArrayMember::OFFSET + (INDEX * sizeof(typename ArrayMember::type::value_type))};
+
+      serialize_to<member<typename ArrayMember::type::value_type, ELEMENT_OFFSET>>(src, dest);
+      serialize_to<ArrayMember, INDEX + 1>(src, dest);
+    }
+  }
+
+  template<instance_of<member> Member>
+  requires (!endianness_susceptible<typename Member::type>)
+  static constexpr void serialize_to_if_endianness_susceptible(const PacketStruct& /* src */, auto& /* dest */) {}
+
+  static consteval bool has_valid_member_order() {
     bool inside_endianness_susceptible_region{};
     bool inside_endianness_resistant_region{};
 
@@ -186,7 +211,9 @@ private:
   }
 
   static consteval std::size_t find_region_offset(const auto is_before_offset) {
-    static_assert(is_valid_member_order(), "Packet members must follow the order: serializable, endianness susceptible, and endianness resistant");
+    static_assert(has_valid_member_order(),
+                  "Expected packet members to follow the order: explicitly serializable, endianness susceptible, and endianness resistant");
+
     std::size_t offset{};
     std::size_t size{};
 
@@ -198,28 +225,33 @@ private:
 
     return last_member_is_before_offset ? offset + size : offset;
   }
+
+  template<std::size_t START_OFFSET, std::size_t END_OFFSET>
+  static void copy(const PacketStruct& src, auto& dest) {
+    std::memcpy(reinterpret<void*, START_OFFSET>(dest), reinterpret<const void*, START_OFFSET>(src), END_OFFSET - START_OFFSET);
+  }
 };
 
-template<class T = void, class... Ts>
+template<typename Vendor, typename PacketStruct>
+concept contains_packet = requires { typename Vendor::template get<PacketStruct>; };
+
+template<class Item = void, class... Items>
 struct packet_vendor {
 private:
   template<class PacketStruct>
   static consteval auto find_packet_linked_to() {
-    if constexpr (std::derived_from<T, std::type_identity<std::remove_cv_t<PacketStruct>>>) {
-      return T{};
-    } else if constexpr (requires { typename T::template get<PacketStruct>; }) {
-      return typename T::template get<PacketStruct>{};
-    } else if constexpr (sizeof...(Ts) > 0) {
-      return packet_vendor<Ts...>::template find_packet_linked_to<PacketStruct>();
+    if constexpr (std::derived_from<Item, std::type_identity<std::remove_cv_t<PacketStruct>>>) {
+      return Item{};
+    } else if constexpr (contains_packet<Item, PacketStruct>) {
+      return typename Item::template get<PacketStruct>{};
+    } else if constexpr (sizeof...(Items) > 0) {
+      return packet_vendor<Items...>::template find_packet_linked_to<PacketStruct>();
     }
   }
 
-  template<class PacketStruct>
-  static constexpr bool PACKET_EXISTS{!std::is_void_v<decltype(find_packet_linked_to<PacketStruct>())>};
-
 public:
   template<class PacketStruct>
-  requires PACKET_EXISTS<PacketStruct>
+  requires (!std::is_void_v<decltype(find_packet_linked_to<PacketStruct>())>)
   using get = decltype(find_packet_linked_to<PacketStruct>());
 };
 
@@ -255,13 +287,21 @@ struct registry_template {
 
 constexpr std::string_view TEMPLATE_END{R"(
 >;
+
+template<typename PacketStruct>
+concept packet_exists = contains_packet<registry, PacketStruct>;
 } // namespace
 } // namespace mbsl
 
 export namespace mbsl {
-template<typename ReinterpretAs = void, typename PacketStruct>
-constexpr auto serialize_in_place(PacketStruct& packet) {
-  return registry::get<PacketStruct>::template serialize_in_place<ReinterpretAs>(packet);
+template<typename ReinterpretAs = void, packet_exists PacketStruct>
+constexpr auto serialize_in_place(PacketStruct& src_dest) {
+  return registry::get<PacketStruct>::template serialize_in_place<ReinterpretAs>(src_dest);
+}
+
+template<packet_exists PacketStruct, instance_of<std::array> Dest>
+constexpr void serialize_to(const PacketStruct& src, Dest& dest) {
+  registry::get<PacketStruct>::serialize_to(src, dest);
 }
 } // namespace mbsl
 )"};

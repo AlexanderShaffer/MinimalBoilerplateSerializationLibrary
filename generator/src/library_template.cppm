@@ -69,7 +69,19 @@ import std;
 
 static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big, "Mixed endianness is unsupported");
 
-export namespace mbsl {)"};
+export namespace mbsl {
+template<class Container>
+class depot : Container {
+public:
+  template<typename Byte>
+  requires (sizeof(Byte) == 1 && (std::integral<Byte> || std::is_enum_v<Byte>))
+  [[nodiscard]] constexpr const Byte* data() const noexcept(Container::data()) {
+    return reinterpret_cast<const Byte*>(Container::data());
+  }
+
+  using Container::size;
+};
+)"};
 
 struct exported_definitions_template {
   using group_start = field_collection<"\nnamespace ", GROUP_NAME, " {">;

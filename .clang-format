@@ -10,6 +10,7 @@ SpaceAfterTemplateKeyword: false
 BreakTemplateDeclarations: Yes
 IndentRequiresClause: false
 IndentExportBlock: false
+RequiresClausePosition: OwnLineWithBrace
 SpaceBeforeParens: Custom
 SpaceBeforeParensOptions:
   AfterRequiresInClause: true

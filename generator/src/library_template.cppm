@@ -72,14 +72,21 @@ static_assert(std::endian::native == std::endian::little || std::endian::native 
 export namespace mbsl {
 template<class Container>
 class depot : Container {
+  template<typename PacketStruct>
+  friend auto serialize_mutably(PacketStruct& packet_struct);
+
 public:
+  using Container::size;
+
   template<typename Byte>
   requires (sizeof(Byte) == 1 && (std::integral<Byte> || std::is_enum_v<Byte>))
-  [[nodiscard]] constexpr const Byte* data() const noexcept(Container::data()) {
+  [[nodiscard]] constexpr const Byte* data() const noexcept(noexcept(Container::data())) {
     return reinterpret_cast<const Byte*>(Container::data());
   }
 
-  using Container::size;
+private:
+  template<typename... Args>
+  explicit constexpr depot(Args&&... args) noexcept(noexcept(Container{std::forward<Args>(args)...})) : Container{std::forward<Args>(args)...} {}
 };
 )"};
 
@@ -124,22 +131,14 @@ struct member : std::type_identity<T> {
 namespace {
 template<class PacketStruct, std::endian ENDIANNESS, instance_of<member>... Members>
 struct packet : std::type_identity<PacketStruct> {
-private:
-  static constexpr bool NO_EXPLICITLY_SERIALIZABLE_MEMBERS{(!explicitly_serializable<typename Members::type> && ...)};
-
-public:
   static constexpr std::initializer_list<std::size_t> REFLECTION_VALUES{Members::OFFSET..., sizeof(typename Members::type)..., sizeof(PacketStruct)};
   static constexpr std::size_t REFLECTION_VALUES_SIZE_BYTES{REFLECTION_VALUES.size() * sizeof(typename decltype(REFLECTION_VALUES)::value_type)};
+  static constexpr bool NO_EXPLICITLY_SERIALIZABLE_MEMBERS{(!explicitly_serializable<typename Members::type> && ...)};
 
-  template<typename ReinterpretAs = void>
-  requires NO_EXPLICITLY_SERIALIZABLE_MEMBERS
-  static constexpr auto serialize_in_place(PacketStruct& src_dest) {
+  static constexpr void serialize_in_place(PacketStruct& src_dest)
+  requires NO_EXPLICITLY_SERIALIZABLE_MEMBERS {
     if constexpr (ENDIANNESS_MISMATCH) {
       (serialize_to_if_endianness_susceptible<Members>(src_dest, src_dest), ...);
-    }
-
-    if constexpr (!std::is_void_v<ReinterpretAs>) {
-      return reinterpret_cast<ReinterpretAs*>(&src_dest);
     }
   }
 
@@ -244,9 +243,6 @@ private:
   }
 };
 
-template<typename Vendor, typename PacketStruct>
-concept contains_packet = requires { typename Vendor::template get<PacketStruct>; };
-
 template<class Item = void, class... Items>
 struct packet_vendor {
 private:
@@ -254,16 +250,19 @@ private:
   static consteval auto find_packet_linked_to() {
     if constexpr (std::derived_from<Item, std::type_identity<std::remove_cv_t<PacketStruct>>>) {
       return Item{};
-    } else if constexpr (contains_packet<Item, PacketStruct>) {
+    } else if constexpr (requires { typename Item::template get<PacketStruct>; }) {
       return typename Item::template get<PacketStruct>{};
     } else if constexpr (sizeof...(Items) > 0) {
       return packet_vendor<Items...>::template find_packet_linked_to<PacketStruct>();
     }
   }
 
+  template<class PacketStruct>
+  static constexpr bool PACKET_EXISTS{!std::is_void_v<decltype(find_packet_linked_to<PacketStruct>())>};
+
 public:
   template<class PacketStruct>
-  requires (!std::is_void_v<decltype(find_packet_linked_to<PacketStruct>())>)
+  requires PACKET_EXISTS<PacketStruct>
   using get = decltype(find_packet_linked_to<PacketStruct>());
 };
 
@@ -299,21 +298,20 @@ struct registry_template {
 
 constexpr std::string_view TEMPLATE_END{R"(
 >;
-
-template<typename PacketStruct>
-concept packet_exists = contains_packet<registry, PacketStruct>;
 } // namespace
 } // namespace mbsl
 
 export namespace mbsl {
-template<typename ReinterpretAs = void, packet_exists PacketStruct>
-constexpr auto serialize_in_place(PacketStruct& src_dest) {
-  return registry::get<PacketStruct>::template serialize_in_place<ReinterpretAs>(src_dest);
-}
+template<typename PacketStruct>
+auto serialize_mutably(PacketStruct& packet_struct) {
+  using packet = registry::get<PacketStruct>;
 
-template<packet_exists PacketStruct, instance_of<std::array> Dest>
-constexpr void serialize_to(const PacketStruct& src, Dest& dest) {
-  registry::get<PacketStruct>::serialize_to(src, dest);
+  if constexpr (packet::NO_EXPLICITLY_SERIALIZABLE_MEMBERS) {
+    packet::serialize_in_place(packet_struct);
+    return depot<std::span<const std::byte, sizeof(PacketStruct)>>{reinterpret_cast<const std::byte*>(&packet_struct), sizeof(PacketStruct)};
+  } else {
+    static_assert(false, "Operation currently unsupported");
+  }
 }
 } // namespace mbsl
 )"};

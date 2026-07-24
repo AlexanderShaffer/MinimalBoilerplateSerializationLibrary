@@ -71,22 +71,23 @@ static_assert(std::endian::native == std::endian::little || std::endian::native 
 
 export namespace mbsl {
 template<class Container>
-class depot : Container {
+class depot {
   template<typename PacketStruct>
   friend auto serialize_mutably(PacketStruct& packet_struct);
 
 public:
-  using Container::size;
-
   template<typename Byte>
   requires (sizeof(Byte) == 1 && (std::integral<Byte> || std::is_enum_v<Byte>))
-  [[nodiscard]] constexpr const Byte* data() const noexcept(noexcept(Container::data())) {
-    return reinterpret_cast<const Byte*>(Container::data());
+  [[nodiscard]] const Byte* data() const {
+    return reinterpret_cast<const Byte*>(m_container.data());
   }
 
+  [[nodiscard]] std::size_t size() const { return m_container.size(); }
+
 private:
-  template<typename... Args>
-  explicit constexpr depot(Args&&... args) noexcept(noexcept(Container{std::forward<Args>(args)...})) : Container{std::forward<Args>(args)...} {}
+  Container m_container;
+
+  explicit depot(auto&&... args) : m_container{std::forward<decltype(args)>(args)...} {}
 };
 )"};
 

@@ -72,8 +72,8 @@ static_assert(std::endian::native == std::endian::little || std::endian::native 
 export namespace mbsl {
 template<class Container>
 class depot {
-  template<typename PacketStruct>
-  friend auto serialize_mutably(PacketStruct& packet_struct);
+  template<typename Packet>
+  friend auto serialize_mutably(Packet& packet);
 
 public:
   template<typename Byte>
@@ -130,13 +130,13 @@ struct member : std::type_identity<T> {
 };
 
 namespace {
-template<class PacketStruct, std::endian ENDIANNESS, instance_of<member>... Members>
-struct packet : std::type_identity<PacketStruct> {
-  static constexpr std::initializer_list<std::size_t> REFLECTION_VALUES{Members::OFFSET..., sizeof(typename Members::type)..., sizeof(PacketStruct)};
+template<class Packet, std::endian ENDIANNESS, instance_of<member>... Members>
+struct serializer : std::type_identity<Packet> {
+  static constexpr std::initializer_list<std::size_t> REFLECTION_VALUES{Members::OFFSET..., sizeof(typename Members::type)..., sizeof(Packet)};
   static constexpr std::size_t REFLECTION_VALUES_SIZE_BYTES{REFLECTION_VALUES.size() * sizeof(typename decltype(REFLECTION_VALUES)::value_type)};
   static constexpr bool NO_EXPLICITLY_SERIALIZABLE_MEMBERS{(!explicitly_serializable<typename Members::type> && ...)};
 
-  static constexpr void serialize_in_place(PacketStruct& src_dest)
+  static void serialize_in_place(Packet& src_dest)
   requires NO_EXPLICITLY_SERIALIZABLE_MEMBERS {
     if constexpr (ENDIANNESS_MISMATCH) {
       (serialize_to_if_endianness_susceptible<Members>(src_dest, src_dest), ...);
@@ -144,8 +144,8 @@ struct packet : std::type_identity<PacketStruct> {
   }
 
   template<instance_of<std::array> Dest>
-  requires (NO_EXPLICITLY_SERIALIZABLE_MEMBERS && sizeof(Dest) >= sizeof(PacketStruct))
-  static constexpr void serialize_to(const PacketStruct& src, Dest& dest) {
+  requires (NO_EXPLICITLY_SERIALIZABLE_MEMBERS && sizeof(Dest) >= sizeof(Packet))
+  static void serialize_to(const Packet& src, Dest& dest) {
     static constexpr std::size_t ENDIANNESS_RESISTANT_REGION_END{find_region_offset([]<typename /* T */> { return true; })};
 
     if constexpr (ENDIANNESS_MISMATCH) {
@@ -186,7 +186,7 @@ private:
 
   template<instance_of<member> Member>
   requires (endianness_susceptible<typename Member::type> && !instance_of<typename Member::type, std::array>)
-  static void serialize_to_if_endianness_susceptible(const PacketStruct& src, auto& dest) {
+  static void serialize_to_if_endianness_susceptible(const Packet& src, auto& dest) {
     using integral = decltype(to_integral<Member, std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t>());
     static_assert(!std::is_void_v<integral>, "Member type sizes must be powers of 2 and at most 8 bytes");
 
@@ -195,7 +195,7 @@ private:
 
   template<instance_of<member> ArrayMember, std::size_t INDEX = 0>
   requires (endianness_susceptible<typename ArrayMember::type> && instance_of<typename ArrayMember::type, std::array>)
-  static constexpr void serialize_to_if_endianness_susceptible(const PacketStruct& src, auto& dest) {
+  static void serialize_to_if_endianness_susceptible(const Packet& src, auto& dest) {
     if constexpr (INDEX < std::tuple_size_v<typename ArrayMember::type>) {
       static constexpr std::size_t ELEMENT_OFFSET{ArrayMember::OFFSET + (INDEX * sizeof(typename ArrayMember::type::value_type))};
 
@@ -206,7 +206,7 @@ private:
 
   template<instance_of<member> Member>
   requires (!endianness_susceptible<typename Member::type>)
-  static constexpr void serialize_to_if_endianness_susceptible(const PacketStruct& /* src */, auto& /* dest */) {}
+  static void serialize_to_if_endianness_susceptible(const Packet& /* src */, auto& /* dest */) {}
 
   static consteval bool has_valid_member_order() {
     bool inside_endianness_susceptible_region{};
@@ -239,41 +239,41 @@ private:
   }
 
   template<std::size_t START_OFFSET, std::size_t END_OFFSET>
-  static void copy(const PacketStruct& src, auto& dest) {
+  static void copy(const Packet& src, auto& dest) {
     std::memcpy(reinterpret<void*, START_OFFSET>(dest), reinterpret<const void*, START_OFFSET>(src), END_OFFSET - START_OFFSET);
   }
 };
 
 template<class Item = void, class... Items>
-struct packet_vendor {
+struct vendor {
 private:
-  template<class PacketStruct>
-  static consteval auto find_packet_linked_to() {
-    if constexpr (std::derived_from<Item, std::type_identity<std::remove_cv_t<PacketStruct>>>) {
+  template<class Packet>
+  static consteval auto find_serializer_linked_to() {
+    if constexpr (std::derived_from<Item, std::type_identity<std::remove_cv_t<Packet>>>) {
       return Item{};
-    } else if constexpr (requires { typename Item::template get<PacketStruct>; }) {
-      return typename Item::template get<PacketStruct>{};
+    } else if constexpr (requires { typename Item::template get<Packet>; }) {
+      return typename Item::template get<Packet>{};
     } else if constexpr (sizeof...(Items) > 0) {
-      return packet_vendor<Items...>::template find_packet_linked_to<PacketStruct>();
+      return vendor<Items...>::template find_serializer_linked_to<Packet>();
     }
   }
 
-  template<class PacketStruct>
-  static constexpr bool PACKET_EXISTS{!std::is_void_v<decltype(find_packet_linked_to<PacketStruct>())>};
+  template<class Packet>
+  static constexpr bool PACKET_EXISTS{!std::is_void_v<decltype(find_serializer_linked_to<Packet>())>};
 
 public:
-  template<class PacketStruct>
-  requires PACKET_EXISTS<PacketStruct>
-  using get = decltype(find_packet_linked_to<PacketStruct>());
+  template<class Packet>
+  requires PACKET_EXISTS<Packet>
+  using get = decltype(find_serializer_linked_to<Packet>());
 };
 
-template<class... Packets>
-struct group : packet_vendor<Packets...> {
+template<class... Serializers>
+struct group : vendor<Serializers...> {
   static consteval auto get_reflection() {
-    std::array<std::uint8_t, (Packets::REFLECTION_VALUES_SIZE_BYTES + ... + 0)> reflection{};
+    std::array<std::uint8_t, (Serializers::REFLECTION_VALUES_SIZE_BYTES + ... + 0)> reflection{};
     std::ranges::subrange subrange{reflection};
 
-    for (const std::initializer_list<std::size_t> values : {Packets::REFLECTION_VALUES...}) {
+    for (const std::initializer_list<std::size_t> values : {Serializers::REFLECTION_VALUES...}) {
       for (const std::size_t value : values) {
         const std::size_t little_endian_value{std::endian::native == std::endian::little ? value : std::byteswap(value)};
         const std::array serialized_value{std::bit_cast<std::array<std::uint8_t, sizeof(little_endian_value)>>(little_endian_value)};
@@ -287,11 +287,11 @@ struct group : packet_vendor<Packets...> {
   }
 };
 
-using registry = packet_vendor<)"};
+using registry = vendor<)"};
 
 struct registry_template {
   using group_start = field_collection<COMMA, "\n  group<">;
-  using packet_start = field_collection<COMMA, "\n    packet<", GROUP_NAME, "::", PACKET_NAME, ", std::endian::", PACKET_ENDIANNESS>;
+  using packet_start = field_collection<COMMA, "\n    serializer<", GROUP_NAME, "::", PACKET_NAME, ", std::endian::", PACKET_ENDIANNESS>;
   using member = field_collection<",\n      member<", MEMBER_TYPE, ", offsetof(", GROUP_NAME, "::", PACKET_NAME, ", ", MEMBER_NAME, ")>">;
   using packet_end = field_collection<"\n    >">;
   using group_end = field_collection<"\n  >">;
@@ -303,13 +303,13 @@ constexpr std::string_view TEMPLATE_END{R"(
 } // namespace mbsl
 
 export namespace mbsl {
-template<typename PacketStruct>
-auto serialize_mutably(PacketStruct& packet_struct) {
-  using packet = registry::get<PacketStruct>;
+template<typename Packet>
+auto serialize_mutably(Packet& packet) {
+  using serializer = registry::get<Packet>;
 
-  if constexpr (packet::NO_EXPLICITLY_SERIALIZABLE_MEMBERS) {
-    packet::serialize_in_place(packet_struct);
-    return depot<std::span<const std::byte, sizeof(PacketStruct)>>{reinterpret_cast<const std::byte*>(&packet_struct), sizeof(PacketStruct)};
+  if constexpr (serializer::NO_EXPLICITLY_SERIALIZABLE_MEMBERS) {
+    serializer::serialize_in_place(packet);
+    return depot<std::span<const std::byte, sizeof(Packet)>>{reinterpret_cast<const std::byte*>(&packet), sizeof(Packet)};
   } else {
     static_assert(false, "Operation currently unsupported");
   }

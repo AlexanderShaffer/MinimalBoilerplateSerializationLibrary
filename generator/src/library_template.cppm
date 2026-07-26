@@ -74,6 +74,7 @@ template<class Container>
 class depot {
 public:
   explicit depot(auto&&... args) : m_container{std::forward<decltype(args)>(args)...} {}
+  depot() = default;
 
   template<typename Byte>
   requires (sizeof(Byte) == 1 && (std::integral<Byte> || std::is_enum_v<Byte>))
@@ -126,15 +127,17 @@ struct member : std::type_identity<T> {
   static constexpr std::size_t OFFSET{OFFSET_};
 };
 
-enum class method : std::uint8_t { MUTABLY, IMMUTABLY };
+enum class method : std::uint8_t { MUTABLY, IMMUTABLY, NEW };
 
 namespace {
 template<class Packet, std::endian ENDIANNESS, instance_of<member>... Members>
 struct serializer : std::type_identity<Packet> {
+private:
+  static constexpr bool NO_EXPLICITLY_SERIALIZABLE_MEMBERS{(!explicitly_serializable<typename Members::type> && ...)};
+
+public:
   static constexpr std::initializer_list<std::size_t> REFLECTION_VALUES{Members::OFFSET..., sizeof(typename Members::type)..., sizeof(Packet)};
   static constexpr std::size_t REFLECTION_VALUES_SIZE_BYTES{REFLECTION_VALUES.size() * sizeof(typename decltype(REFLECTION_VALUES)::value_type)};
-  static constexpr bool NO_EXPLICITLY_SERIALIZABLE_MEMBERS{(!explicitly_serializable<typename Members::type> && ...)};
-  static constexpr bool ENDIANNESS_MISMATCH{std::endian::native != ENDIANNESS};
 
   template<method /* METHOD */>
   static auto serialize(const Packet& /* packet */)
@@ -156,15 +159,23 @@ struct serializer : std::type_identity<Packet> {
   static auto serialize(const Packet& packet)
   requires (NO_EXPLICITLY_SERIALIZABLE_MEMBERS && METHOD == method::IMMUTABLY) {
     if constexpr (ENDIANNESS_MISMATCH) {
-      depot<std::array<std::byte, sizeof(packet)>> depot{};
-      serialize_to(packet, depot);
-      return depot;
+      return serialize<method::NEW>(packet);
     } else {
       return reinterpret_as_depot(packet);
     }
   }
 
+  template<method METHOD>
+  static auto serialize(const Packet& packet)
+  requires (NO_EXPLICITLY_SERIALIZABLE_MEMBERS && METHOD == method::NEW) {
+    depot<std::array<std::byte, sizeof(packet)>> depot;
+    serialize_to(packet, depot);
+    return depot;
+  }
+
 private:
+  static constexpr bool ENDIANNESS_MISMATCH{std::endian::native != ENDIANNESS};
+
   template<instance_of<member> Member, std::integral CurrentIntegral, std::integral... Integrals>
   static consteval auto to_integral() {
     if constexpr (sizeof(typename Member::type) == sizeof(CurrentIntegral)) {
@@ -323,15 +334,21 @@ struct registry_template {
 constexpr std::string_view TEMPLATE_END{R"(
 >;
 } // namespace
+
+template<method METHOD>
+auto serialize(auto& packet) {
+  return registry::get<decltype(packet)>::template serialize<METHOD>(packet);
+}
 } // namespace mbsl
 
 export namespace mbsl {
 auto serialize_mutably(auto& packet)
 requires (!std::is_const_v<std::remove_reference_t<decltype(packet)>>) {
-  return registry::get<decltype(packet)>::template serialize<method::MUTABLY>(packet);
+  return serialize<method::MUTABLY>(packet);
 }
 
-auto serialize_immutably(auto& packet) { return registry::get<decltype(packet)>::template serialize<method::IMMUTABLY>(packet); }
+auto serialize_immutably(auto& packet) { return serialize<method::IMMUTABLY>(packet); }
+auto serialize_new(const auto& packet) { return serialize<method::NEW>(packet); }
 } // namespace mbsl
 )"};
 } // namespace library_template

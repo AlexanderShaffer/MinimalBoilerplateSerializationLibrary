@@ -24,7 +24,7 @@ namespace {
 class state {
 public:
   std::string_view group_name_{};
-  std::string_view packet_endianness_{"little"};
+  std::string_view package_endianness_{"little"};
 
   explicit state(const std::string_view config) : m_config{config} {}
 
@@ -67,11 +67,11 @@ std::pair<std::string_view, token_parser> create_assignment_parser(const std::st
           }};
 }
 
-bool parse_packet_definition(state& state) {
+bool parse_package_definition(state& state) {
   const std::string_view name{state.get_next_token()};
 
   if (static constexpr std::string_view START{"{"}; state.get_next_token() != START) {
-    std::println(std::cerr, "Error: a packet definition must begin with a \"{}\" surrounded by whitespace", START);
+    std::println(std::cerr, "Error: a package definition must begin with a \"{}\" surrounded by whitespace", START);
     return false;
   }
 
@@ -83,17 +83,17 @@ bool parse_packet_definition(state& state) {
 
   while (state.get_next_token() != END) {
     if (state.get_current_token().empty()) {
-      std::println(std::cerr, "Error: a packet definition must end with a \"{}\" surrounded by whitespace", END);
+      std::println(std::cerr, "Error: a package definition must end with a \"{}\" surrounded by whitespace", END);
       return false;
     }
 
     members.emplace_back(state.get_current_token(), state.get_next_token());
   }
 
-  const bool unique{writer::add_packet(state.group_name_, name, state.packet_endianness_, std::move(members))};
+  const bool unique{writer::add_package(state.group_name_, name, state.package_endianness_, std::move(members))};
 
   if (!unique) {
-    std::println(std::cerr, "Error: all packets within a group must have a unique name");
+    std::println(std::cerr, "Error: all packages within a group must have a unique name");
   }
 
   return unique;
@@ -106,8 +106,8 @@ bool parse_unrecognized_token(state& state) {
 
 token_parser get_token_parser(const std::string_view token) {
   static const std::unordered_map TOKEN_PARSERS{create_assignment_parser<&state::group_name_>("group"),
-                                                create_assignment_parser<&state::packet_endianness_>("endianness"),
-                                                {"packet", parse_packet_definition}};
+                                                create_assignment_parser<&state::package_endianness_>("endianness"),
+                                                {"package", parse_package_definition}};
 
   if (const auto iterator{TOKEN_PARSERS.find(token)}; iterator != TOKEN_PARSERS.end()) {
     return iterator->second;

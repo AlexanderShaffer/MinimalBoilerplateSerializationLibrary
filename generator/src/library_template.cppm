@@ -24,8 +24,8 @@ export namespace library_template {
 struct field_arg_holder {
   std::string_view comma_{};
   std::string_view group_name_{};
-  std::string_view packet_name_{};
-  std::string_view packet_endianness_{};
+  std::string_view package_name_{};
+  std::string_view package_endianness_{};
   std::string_view member_type_{};
   std::string_view member_name_{};
 };
@@ -39,8 +39,8 @@ struct field_collection {
 
 constexpr replaceable_field COMMA{.field_param_ = &field_arg_holder::comma_};
 constexpr replaceable_field GROUP_NAME{.field_param_ = &field_arg_holder::group_name_};
-constexpr replaceable_field PACKET_NAME{.field_param_ = &field_arg_holder::packet_name_};
-constexpr replaceable_field PACKET_ENDIANNESS{.field_param_ = &field_arg_holder::packet_endianness_};
+constexpr replaceable_field PACKET_NAME{.field_param_ = &field_arg_holder::package_name_};
+constexpr replaceable_field PACKET_ENDIANNESS{.field_param_ = &field_arg_holder::package_endianness_};
 constexpr replaceable_field MEMBER_TYPE{.field_param_ = &field_arg_holder::member_type_};
 constexpr replaceable_field MEMBER_NAME{.field_param_ = &field_arg_holder::member_name_};
 
@@ -91,9 +91,9 @@ private:
 
 struct exported_definitions_template {
   using group_start = field_collection<"\nnamespace ", GROUP_NAME, " {">;
-  using packet_start = field_collection<"\nstruct ", PACKET_NAME, " {\n">;
+  using package_start = field_collection<"\nstruct ", PACKET_NAME, " {\n">;
   using member = field_collection<"  ", MEMBER_TYPE, " ", MEMBER_NAME, ";\n">;
-  using packet_end = field_collection<"};\n">;
+  using package_end = field_collection<"};\n">;
   using group_end = field_collection<"} // namespace ", GROUP_NAME, "\n">;
 };
 
@@ -130,46 +130,46 @@ struct member : std::type_identity<T> {
 enum class method : std::uint8_t { MUTABLY, IMMUTABLY, NEW };
 
 namespace {
-template<class Packet, std::endian ENDIANNESS, instance_of<member>... Members>
-struct serializer : std::type_identity<Packet> {
+template<class Package, std::endian ENDIANNESS, instance_of<member>... Members>
+struct serializer : std::type_identity<Package> {
 private:
   static constexpr bool NO_EXPLICITLY_SERIALIZABLE_MEMBERS{(!explicitly_serializable<typename Members::type> && ...)};
 
 public:
-  static constexpr std::initializer_list<std::size_t> REFLECTION_VALUES{Members::OFFSET..., sizeof(typename Members::type)..., sizeof(Packet)};
+  static constexpr std::initializer_list<std::size_t> REFLECTION_VALUES{Members::OFFSET..., sizeof(typename Members::type)..., sizeof(Package)};
   static constexpr std::size_t REFLECTION_VALUES_SIZE_BYTES{REFLECTION_VALUES.size() * sizeof(typename decltype(REFLECTION_VALUES)::value_type)};
 
   template<method /* METHOD */>
-  static auto serialize(const Packet& /* packet */)
+  static auto serialize(const Package& /* package */)
   requires (!NO_EXPLICITLY_SERIALIZABLE_MEMBERS) {
     static_assert(false, "Operation currently unsupported");
   }
 
   template<method METHOD>
-  static auto serialize(Packet& packet)
+  static auto serialize(Package& package)
   requires (NO_EXPLICITLY_SERIALIZABLE_MEMBERS && METHOD == method::MUTABLY) {
     if constexpr (ENDIANNESS_MISMATCH) {
-      serialize_all_members_to(packet, packet);
+      serialize_all_members_to(package, package);
     }
 
-    return reinterpret_as_depot(packet);
+    return reinterpret_as_depot(package);
   }
 
   template<method METHOD>
-  static auto serialize(const Packet& packet)
+  static auto serialize(const Package& package)
   requires (NO_EXPLICITLY_SERIALIZABLE_MEMBERS && METHOD == method::IMMUTABLY) {
     if constexpr (ENDIANNESS_MISMATCH) {
-      return serialize<method::NEW>(packet);
+      return serialize<method::NEW>(package);
     } else {
-      return reinterpret_as_depot(packet);
+      return reinterpret_as_depot(package);
     }
   }
 
   template<method METHOD>
-  static auto serialize(const Packet& packet)
+  static auto serialize(const Package& package)
   requires (NO_EXPLICITLY_SERIALIZABLE_MEMBERS && METHOD == method::NEW) {
-    depot<std::array<std::byte, sizeof(packet)>> depot;
-    serialize_to(packet, depot);
+    depot<std::array<std::byte, sizeof(package)>> depot;
+    serialize_to(package, depot);
     return depot;
   }
 
@@ -200,7 +200,7 @@ private:
 
   template<instance_of<member> Member>
   requires (endianness_susceptible<typename Member::type> && !instance_of<typename Member::type, std::array>)
-  static void serialize_to_if_endianness_susceptible(const Packet& src, auto& dest) {
+  static void serialize_to_if_endianness_susceptible(const Package& src, auto& dest) {
     using integral = decltype(to_integral<Member, std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t>());
     static_assert(!std::is_void_v<integral>, "Member type sizes must be powers of 2 and at most 8 bytes");
 
@@ -209,7 +209,7 @@ private:
 
   template<instance_of<member> ArrayMember, std::size_t INDEX = 0>
   requires (endianness_susceptible<typename ArrayMember::type> && instance_of<typename ArrayMember::type, std::array>)
-  static void serialize_to_if_endianness_susceptible(const Packet& src, auto& dest) {
+  static void serialize_to_if_endianness_susceptible(const Package& src, auto& dest) {
     if constexpr (INDEX < std::tuple_size_v<typename ArrayMember::type>) {
       static constexpr std::size_t ELEMENT_OFFSET{ArrayMember::OFFSET + (INDEX * sizeof(typename ArrayMember::type::value_type))};
 
@@ -220,9 +220,9 @@ private:
 
   template<instance_of<member> Member>
   requires (!endianness_susceptible<typename Member::type>)
-  static void serialize_to_if_endianness_susceptible(const Packet& /* src */, auto& /* dest */) {}
+  static void serialize_to_if_endianness_susceptible(const Package& /* src */, auto& /* dest */) {}
 
-  static void serialize_all_members_to(const Packet& src, auto& dest) { (serialize_to_if_endianness_susceptible<Members>(src, dest), ...); }
+  static void serialize_all_members_to(const Package& src, auto& dest) { (serialize_to_if_endianness_susceptible<Members>(src, dest), ...); }
 
   static consteval bool has_valid_member_order() {
     bool inside_endianness_susceptible_region{};
@@ -240,7 +240,7 @@ private:
 
   static consteval std::size_t find_region_offset(const auto is_before_offset) {
     static_assert(has_valid_member_order(),
-                  "Expected packet members to follow the order: explicitly serializable, endianness susceptible, and endianness resistant");
+                  "Expected package members to follow the order: explicitly serializable, endianness susceptible, and endianness resistant");
 
     std::size_t offset{};
     std::size_t size{};
@@ -255,11 +255,11 @@ private:
   }
 
   template<std::size_t START_OFFSET, std::size_t END_OFFSET>
-  static void copy(const Packet& src, auto& dest) {
+  static void copy(const Package& src, auto& dest) {
     std::memcpy(reinterpret<void*, START_OFFSET>(dest), reinterpret<const void*, START_OFFSET>(src), END_OFFSET - START_OFFSET);
   }
 
-  static void serialize_to(const Packet& src, auto& dest) {
+  static void serialize_to(const Package& src, auto& dest) {
     static constexpr std::size_t ENDIANNESS_RESISTANT_REGION_END{find_region_offset([]<typename /* T */> { return true; })};
 
     if constexpr (ENDIANNESS_MISMATCH) {
@@ -273,32 +273,32 @@ private:
     }
   }
 
-  static auto reinterpret_as_depot(const Packet& packet) {
-    return depot<std::span<const std::byte, sizeof(Packet)>>{reinterpret_cast<const std::byte*>(&packet), sizeof(packet)};
+  static auto reinterpret_as_depot(const Package& package) {
+    return depot<std::span<const std::byte, sizeof(Package)>>{reinterpret_cast<const std::byte*>(&package), sizeof(package)};
   }
 };
 
 template<class Item = void, class... Items>
 struct vendor {
 private:
-  template<class Packet>
+  template<class Package>
   static consteval auto find_serializer_linked_to() {
-    if constexpr (std::derived_from<Item, std::type_identity<std::remove_cv_t<std::remove_reference_t<Packet>>>>) {
+    if constexpr (std::derived_from<Item, std::type_identity<std::remove_cv_t<std::remove_reference_t<Package>>>>) {
       return Item{};
-    } else if constexpr (requires { typename Item::template get<Packet>; }) {
-      return typename Item::template get<Packet>{};
+    } else if constexpr (requires { typename Item::template get<Package>; }) {
+      return typename Item::template get<Package>{};
     } else if constexpr (sizeof...(Items) > 0) {
-      return vendor<Items...>::template find_serializer_linked_to<Packet>();
+      return vendor<Items...>::template find_serializer_linked_to<Package>();
     }
   }
 
-  template<class Packet>
-  static constexpr bool PACKET_EXISTS{!std::is_void_v<decltype(find_serializer_linked_to<Packet>())>};
+  template<class Package>
+  static constexpr bool PACKET_EXISTS{!std::is_void_v<decltype(find_serializer_linked_to<Package>())>};
 
 public:
-  template<class Packet>
-  requires PACKET_EXISTS<Packet>
-  using get = decltype(find_serializer_linked_to<Packet>());
+  template<class Package>
+  requires PACKET_EXISTS<Package>
+  using get = decltype(find_serializer_linked_to<Package>());
 };
 
 template<class... Serializers>
@@ -325,9 +325,9 @@ using registry = vendor<)"};
 
 struct registry_template {
   using group_start = field_collection<COMMA, "\n  group<">;
-  using packet_start = field_collection<COMMA, "\n    serializer<", GROUP_NAME, "::", PACKET_NAME, ", std::endian::", PACKET_ENDIANNESS>;
+  using package_start = field_collection<COMMA, "\n    serializer<", GROUP_NAME, "::", PACKET_NAME, ", std::endian::", PACKET_ENDIANNESS>;
   using member = field_collection<",\n      member<", MEMBER_TYPE, ", offsetof(", GROUP_NAME, "::", PACKET_NAME, ", ", MEMBER_NAME, ")>">;
-  using packet_end = field_collection<"\n    >">;
+  using package_end = field_collection<"\n    >">;
   using group_end = field_collection<"\n  >">;
 };
 
@@ -336,19 +336,19 @@ constexpr std::string_view TEMPLATE_END{R"(
 } // namespace
 
 template<method METHOD>
-auto serialize(auto& packet) {
-  return registry::get<decltype(packet)>::template serialize<METHOD>(packet);
+auto serialize(auto& package) {
+  return registry::get<decltype(package)>::template serialize<METHOD>(package);
 }
 } // namespace mbsl
 
 export namespace mbsl {
-auto serialize_mutably(auto& packet)
-requires (!std::is_const_v<std::remove_reference_t<decltype(packet)>>) {
-  return serialize<method::MUTABLY>(packet);
+auto serialize_mutably(auto& package)
+requires (!std::is_const_v<std::remove_reference_t<decltype(package)>>) {
+  return serialize<method::MUTABLY>(package);
 }
 
-auto serialize_immutably(auto& packet) { return serialize<method::IMMUTABLY>(packet); }
-auto serialize_new(const auto& packet) { return serialize<method::NEW>(packet); }
+auto serialize_immutably(auto& package) { return serialize<method::IMMUTABLY>(package); }
+auto serialize_new(const auto& package) { return serialize<method::NEW>(package); }
 } // namespace mbsl
 )"};
 } // namespace library_template

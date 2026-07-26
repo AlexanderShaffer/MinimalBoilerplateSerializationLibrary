@@ -25,6 +25,6 @@ struct member {
   std::string_view name_{};
 };
 
-bool add_packet(std::string_view group_name, std::string_view packet_name, std::string_view endianness, std::vector<member>&& members);
+bool add_package(std::string_view group_name, std::string_view packet_name, std::string_view endianness, std::vector<member>&& members);
 void write_library();
 } // namespace writer

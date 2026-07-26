@@ -21,13 +21,13 @@ import library_template;
 
 namespace writer {
 namespace {
-struct packet {
+struct package {
   std::string_view endianness_{};
   std::vector<member> members_{};
 };
 
-using packet_map = std::flat_map<std::string_view, packet>;
-std::flat_map<std::string_view, packet_map> g_group_map{};
+using package_map = std::flat_map<std::string_view, package>;
+std::flat_map<std::string_view, package_map> g_group_map{};
 
 class library_writer {
 public:
@@ -35,24 +35,24 @@ public:
 
   template<typename FieldTemplate>
   void write_field_template() {
-    for (bool first_group{true}; const auto& [group_name, packet_map] : g_group_map) {
+    for (bool first_group{true}; const auto& [group_name, package_map] : g_group_map) {
       m_field_arg_holder.group_name_ = group_name;
       replace_comma_field(first_group);
       write_field_collection<typename FieldTemplate::group_start>();
 
-      for (bool first_struct{true}; const auto& [packet_name, packet] : packet_map) {
-        m_field_arg_holder.packet_name_ = packet_name;
-        m_field_arg_holder.packet_endianness_ = packet.endianness_;
+      for (bool first_struct{true}; const auto& [package_name, package] : package_map) {
+        m_field_arg_holder.package_name_ = package_name;
+        m_field_arg_holder.package_endianness_ = package.endianness_;
         replace_comma_field(first_struct);
-        write_field_collection<typename FieldTemplate::packet_start>();
+        write_field_collection<typename FieldTemplate::package_start>();
 
-        for (const auto& [member_type, member_name] : packet.members_) {
+        for (const auto& [member_type, member_name] : package.members_) {
           m_field_arg_holder.member_type_ = member_type;
           m_field_arg_holder.member_name_ = member_name;
           write_field_collection<typename FieldTemplate::member>();
         }
 
-        write_field_collection<typename FieldTemplate::packet_end>();
+        write_field_collection<typename FieldTemplate::package_end>();
       }
 
       write_field_collection<typename FieldTemplate::group_end>();
@@ -75,10 +75,10 @@ private:
 };
 } // namespace
 
-bool add_packet(const std::string_view group_name, const std::string_view packet_name, const std::string_view endianness,
+bool add_package(const std::string_view group_name, const std::string_view package_name, const std::string_view endianness,
                 std::vector<member>&& members) {
-  packet_map& packet_map{g_group_map.try_emplace(group_name).first->second};
-  const bool unique{packet_map.try_emplace(packet_name, endianness, std::move(members)).second};
+  package_map& package_map{g_group_map.try_emplace(group_name).first->second};
+  const bool unique{package_map.try_emplace(package_name, endianness, std::move(members)).second};
 
   return unique;
 }

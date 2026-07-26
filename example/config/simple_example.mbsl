@@ -23,7 +23,8 @@ group example_group
 endianness big
 
 // Defines a C++ struct in the mbsl::example_group namespace with automatically generated serialization and deserialization functions.
-packet example_packet {
+package example_package {
   double x_
   int y_
+  std::array<std::uint8_t,15> z_
 }

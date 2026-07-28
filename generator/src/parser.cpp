@@ -35,7 +35,14 @@ public:
       m_config.remove_prefix(std::min(m_config.find_first_not_of(WHITESPACE), m_config.size()));
     } while (ignore_comment("/*", "*/") || ignore_comment("//", "\n"));
 
-    m_token = {m_config.substr(0, std::min(m_config.find_first_of(WHITESPACE), m_config.size()))};
+    std::size_t token_size{};
+
+    do {
+      token_size = m_config.find_first_not_of(WHITESPACE, token_size);
+      token_size = m_config.find_first_of(WHITESPACE, token_size);
+      m_token = m_config.substr(0, token_size);
+    } while (m_token.ends_with(',') && m_token.size() != m_config.size());
+
     m_config.remove_prefix(m_token.size());
     return m_token;
   }

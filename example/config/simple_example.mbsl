@@ -26,5 +26,5 @@ endianness big
 package example_package {
   double x_
   int y_
-  std::array<std::uint8_t,15> z_
+  std::array<std::uint8_t, 15> z_
 }

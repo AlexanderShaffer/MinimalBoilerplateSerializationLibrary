@@ -69,6 +69,7 @@ private:
   }
 
   template<typename FieldCollection>
+  requires requires(FieldCollection f) { requires std::same_as<FieldCollection, decltype(library_template::field_collection{f})>; }
   void write_field_collection() {
     std::ranges::for_each(FieldCollection::resolve(m_field_arg_holder), std::bind_front(&library_writer::write_string, this));
   }

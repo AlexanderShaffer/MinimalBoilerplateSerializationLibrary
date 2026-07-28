@@ -98,7 +98,7 @@ namespace mbsl {
 template<typename T>
 concept explicitly_serializable = false; // TODO: Implement this concept
 
-template<typename T, template<typename, std::size_t> class Template>
+template<typename T, template<typename, auto> class Template>
 concept instance_of = requires (T t) { requires std::same_as<T, decltype(Template(t))>; };
 
 template<typename T>
@@ -124,7 +124,6 @@ struct member : std::type_identity<T> {
 
 enum class method : std::uint8_t { MUTABLY, IMMUTABLY, NEW };
 
-namespace {
 template<class Package, std::endian ENDIANNESS, instance_of<member>... Members>
 struct serializer : std::type_identity<Package> {
 private:
@@ -270,12 +269,13 @@ private:
   }
 };
 
+namespace {
 template<class Item = void, class... Items>
 struct vendor {
 private:
   template<class Package>
   static consteval auto find_serializer_linked_to() {
-    if constexpr (std::derived_from<Item, std::type_identity<std::remove_cv_t<std::remove_reference_t<Package>>>>) {
+    if constexpr (std::derived_from<Item, std::type_identity<Package>>) {
       return Item{};
     } else if constexpr (requires { typename Item::template get<Package>; }) {
       return typename Item::template get<Package>{};
@@ -293,7 +293,7 @@ public:
   using get = decltype(find_serializer_linked_to<Package>());
 };
 
-template<class... Serializers>
+template<instance_of<serializer>... Serializers>
 struct group : vendor<Serializers...> {
   static consteval auto get_reflection() {
     std::array<std::uint8_t, (Serializers::REFLECTION_VALUES_SIZE_BYTES + ... + 0)> reflection{};
@@ -329,7 +329,8 @@ constexpr std::string_view TEMPLATE_END{R"(
 
 template<method METHOD>
 auto serialize(auto& package) {
-  return registry::get<decltype(package)>::template serialize<METHOD>(package);
+  using package_type = std::remove_cv_t<std::remove_reference_t<decltype(package)>>;
+  return registry::get<package_type>::template serialize<METHOD>(package);
 }
 } // namespace mbsl
 

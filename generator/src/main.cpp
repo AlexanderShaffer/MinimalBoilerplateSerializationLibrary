@@ -21,7 +21,7 @@ import parser;
 import writer;
 
 int main(const int argc, const char* const* const argv) {
-  const auto args{std::span{argv, static_cast<std::size_t>(argc)} | std::views::drop(1)};
+  const std::ranges::drop_view args{std::span{argv, static_cast<std::size_t>(argc)}, 1};
   std::size_t buffer_size{};
 
   for (const char* const arg : args) {

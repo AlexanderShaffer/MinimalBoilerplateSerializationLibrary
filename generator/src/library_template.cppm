@@ -39,8 +39,8 @@ struct field_collection {
 
 constexpr replaceable_field COMMA{.field_param_ = &field_arg_holder::comma_};
 constexpr replaceable_field GROUP_NAME{.field_param_ = &field_arg_holder::group_name_};
-constexpr replaceable_field PACKET_NAME{.field_param_ = &field_arg_holder::package_name_};
-constexpr replaceable_field PACKET_ENDIANNESS{.field_param_ = &field_arg_holder::package_endianness_};
+constexpr replaceable_field PACKAGE_NAME{.field_param_ = &field_arg_holder::package_name_};
+constexpr replaceable_field PACKAGE_ENDIANNESS{.field_param_ = &field_arg_holder::package_endianness_};
 constexpr replaceable_field MEMBER_TYPE{.field_param_ = &field_arg_holder::member_type_};
 constexpr replaceable_field MEMBER_NAME{.field_param_ = &field_arg_holder::member_name_};
 
@@ -71,27 +71,22 @@ static_assert(std::endian::native == std::endian::little || std::endian::native 
 
 export namespace mbsl {
 template<class Container>
-class depot {
+class depot : Container {
 public:
-  explicit depot(auto&&... args) : m_container{std::forward<decltype(args)>(args)...} {}
-  depot() = default;
+  using Container::Container;
+  using Container::size;
 
   template<typename Byte>
   requires (sizeof(Byte) == 1 && (std::integral<Byte> || std::is_enum_v<Byte>))
-  [[nodiscard]] const Byte* data() const {
-    return reinterpret_cast<const Byte*>(m_container.data());
+  [[nodiscard]] const Byte* data() const noexcept(noexcept(Container::data())) {
+    return reinterpret_cast<const Byte*>(Container::data());
   }
-
-  [[nodiscard]] std::size_t size() const { return m_container.size(); }
-
-private:
-  Container m_container;
 };
 )"};
 
 struct exported_definitions_template {
   using group_start = field_collection<"\nnamespace ", GROUP_NAME, " {">;
-  using package_start = field_collection<"\nstruct ", PACKET_NAME, " {\n">;
+  using package_start = field_collection<"\nstruct ", PACKAGE_NAME, " {\n">;
   using member = field_collection<"  ", MEMBER_TYPE, " ", MEMBER_NAME, ";\n">;
   using package_end = field_collection<"};\n">;
   using group_end = field_collection<"} // namespace ", GROUP_NAME, "\n">;
@@ -149,10 +144,10 @@ public:
   static auto serialize(Package& package)
   requires (NO_EXPLICITLY_SERIALIZABLE_MEMBERS && METHOD == method::MUTABLY) {
     if constexpr (ENDIANNESS_MISMATCH) {
-      serialize_all_members_to(package, package);
+      serialize_endianness_susceptible_members_to(package, package);
     }
 
-    return reinterpret_as_depot(package);
+    return construct_view_of(package);
   }
 
   template<method METHOD>
@@ -161,7 +156,7 @@ public:
     if constexpr (ENDIANNESS_MISMATCH) {
       return serialize<method::NEW>(package);
     } else {
-      return reinterpret_as_depot(package);
+      return construct_view_of(package);
     }
   }
 
@@ -185,17 +180,10 @@ private:
     }
   }
 
-  template<typename ReinterpretAs, std::size_t OFFSET, typename Arg>
-  requires (std::is_pointer_v<ReinterpretAs> || std::is_reference_v<ReinterpretAs>)
-  static ReinterpretAs reinterpret(Arg& arg) {
-    using byte_ptr = std::conditional_t<std::is_const_v<Arg>, const std::byte*, std::byte*>;
-    auto& data_at_offset{reinterpret_cast<byte_ptr>(&arg)[OFFSET]};
-
-    if constexpr (std::is_pointer_v<ReinterpretAs>) {
-      return reinterpret_cast<ReinterpretAs>(&data_at_offset);
-    } else {
-      return reinterpret_cast<ReinterpretAs>(data_at_offset);
-    }
+  template<std::size_t OFFSET>
+  static auto& get_byte(auto& arg) {
+    static constexpr bool CONST_QUALIFIED{std::is_const_v<std::remove_reference_t<decltype(arg)>>};
+    return reinterpret_cast<std::conditional_t<CONST_QUALIFIED, const std::byte*, std::byte*>>(&arg)[OFFSET];
   }
 
   template<instance_of<member> Member>
@@ -204,7 +192,9 @@ private:
     using integral = decltype(to_integral<Member, std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t>());
     static_assert(!std::is_void_v<integral>, "Member type sizes must be powers of 2 and at most 8 bytes");
 
-    reinterpret<integral&, Member::OFFSET>(dest) = std::byteswap(reinterpret<const integral&, Member::OFFSET>(src));
+    const integral& integral_src{reinterpret_cast<const integral&>(get_byte<Member::OFFSET>(src))};
+    integral& integral_dest{reinterpret_cast<integral&>(get_byte<Member::OFFSET>(dest))};
+    integral_dest = std::byteswap(integral_src);
   }
 
   template<instance_of<member> ArrayMember, std::size_t INDEX = 0>
@@ -222,7 +212,9 @@ private:
   requires (!endianness_susceptible<typename Member::type>)
   static void serialize_to_if_endianness_susceptible(const Package& /* src */, auto& /* dest */) {}
 
-  static void serialize_all_members_to(const Package& src, auto& dest) { (serialize_to_if_endianness_susceptible<Members>(src, dest), ...); }
+  static void serialize_endianness_susceptible_members_to(const Package& src, auto& dest) {
+    (serialize_to_if_endianness_susceptible<Members>(src, dest), ...);
+  }
 
   static consteval bool has_valid_member_order() {
     bool inside_endianness_susceptible_region{};
@@ -256,25 +248,25 @@ private:
 
   template<std::size_t START_OFFSET, std::size_t END_OFFSET>
   static void copy(const Package& src, auto& dest) {
-    std::memcpy(reinterpret<void*, START_OFFSET>(dest), reinterpret<const void*, START_OFFSET>(src), END_OFFSET - START_OFFSET);
+    std::memcpy(&get_byte<START_OFFSET>(dest), &get_byte<START_OFFSET>(src), END_OFFSET - START_OFFSET);
   }
 
   static void serialize_to(const Package& src, auto& dest) {
     static constexpr std::size_t ENDIANNESS_RESISTANT_REGION_END{find_region_offset([]<typename /* T */> { return true; })};
 
     if constexpr (ENDIANNESS_MISMATCH) {
-      serialize_all_members_to(src, dest);
+      serialize_endianness_susceptible_members_to(src, dest);
 
       static constexpr std::size_t ENDIANNESS_RESISTANT_REGION_START{find_region_offset([]<typename T> { return !endianness_resistant<T>; })};
       copy<ENDIANNESS_RESISTANT_REGION_START, ENDIANNESS_RESISTANT_REGION_END>(src, dest);
     } else {
-      static constexpr std::size_t ENDIANNESS_SUSCEPTIBLE_REGION_START{find_region_offset([]<typename T> { return !explicitly_serializable<T>; })};
+      static constexpr std::size_t ENDIANNESS_SUSCEPTIBLE_REGION_START{find_region_offset([]<typename T> { return explicitly_serializable<T>; })};
       copy<ENDIANNESS_SUSCEPTIBLE_REGION_START, ENDIANNESS_RESISTANT_REGION_END>(src, dest);
     }
   }
 
-  static auto reinterpret_as_depot(const Package& package) {
-    return depot<std::span<const std::byte, sizeof(Package)>>{reinterpret_cast<const std::byte*>(&package), sizeof(package)};
+  static auto construct_view_of(const Package& package) {
+    return depot<std::span<const std::byte, sizeof(package)>>{reinterpret_cast<const std::byte*>(&package), sizeof(package)};
   }
 };
 
@@ -293,11 +285,11 @@ private:
   }
 
   template<class Package>
-  static constexpr bool PACKET_EXISTS{!std::is_void_v<decltype(find_serializer_linked_to<Package>())>};
+  static constexpr bool PACKAGE_EXISTS{!std::is_void_v<decltype(find_serializer_linked_to<Package>())>};
 
 public:
   template<class Package>
-  requires PACKET_EXISTS<Package>
+  requires PACKAGE_EXISTS<Package>
   using get = decltype(find_serializer_linked_to<Package>());
 };
 
@@ -325,8 +317,8 @@ using registry = vendor<)"};
 
 struct registry_template {
   using group_start = field_collection<COMMA, "\n  group<">;
-  using package_start = field_collection<COMMA, "\n    serializer<", GROUP_NAME, "::", PACKET_NAME, ", std::endian::", PACKET_ENDIANNESS>;
-  using member = field_collection<",\n      member<", MEMBER_TYPE, ", offsetof(", GROUP_NAME, "::", PACKET_NAME, ", ", MEMBER_NAME, ")>">;
+  using package_start = field_collection<COMMA, "\n    serializer<", GROUP_NAME, "::", PACKAGE_NAME, ", std::endian::", PACKAGE_ENDIANNESS>;
+  using member = field_collection<",\n      member<", MEMBER_TYPE, ", offsetof(", GROUP_NAME, "::", PACKAGE_NAME, ", ", MEMBER_NAME, ")>">;
   using package_end = field_collection<"\n    >">;
   using group_end = field_collection<"\n  >">;
 };

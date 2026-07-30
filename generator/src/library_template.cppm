@@ -69,31 +69,6 @@ import std;
 
 static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big, "Mixed endianness is unsupported");
 
-export namespace mbsl {
-template<class Container>
-class depot : Container {
-public:
-  using Container::Container;
-  using Container::size;
-
-  template<typename Byte>
-  requires (sizeof(Byte) == 1 && (std::integral<Byte> || std::is_enum_v<Byte>))
-  [[nodiscard]] const Byte* data() const noexcept(noexcept(Container::data())) {
-    return reinterpret_cast<const Byte*>(Container::data());
-  }
-};
-)"};
-
-struct exported_definitions_template {
-  using group_start = field_collection<"\nnamespace ", GROUP_NAME, " {">;
-  using package_start = field_collection<"\nstruct ", PACKAGE_NAME, " {\n">;
-  using member = field_collection<"  ", MEMBER_TYPE, " ", MEMBER_NAME, ";\n">;
-  using package_end = field_collection<"};\n">;
-  using group_end = field_collection<"} // namespace ", GROUP_NAME, "\n">;
-};
-
-constexpr std::string_view TEMPLATE_BODY{R"(} // namespace mbsl
-
 namespace mbsl {
 template<typename T>
 concept explicitly_serializable = false; // TODO: Implement this concept
@@ -102,7 +77,7 @@ template<typename T, template<typename, auto> class Template>
 concept instance_of = requires (T t) { requires std::same_as<T, decltype(Template(t))>; };
 
 template<typename T>
-consteval bool is_numerical() {
+[[nodiscard]] consteval bool is_numerical() {
   if constexpr (instance_of<T, std::array>) {
     return is_numerical<typename T::value_type>();
   } else {
@@ -128,7 +103,7 @@ struct member : std::type_identity<T> {
 enum class method : std::uint8_t { MUTABLY, IMMUTABLY, NEW };
 
 template<instance_of<member> Member, std::integral CurrentIntegral, std::integral... Integrals>
-consteval auto to_integral() {
+[[nodiscard]] consteval auto to_integral() {
   if constexpr (sizeof(typename Member::type) == sizeof(CurrentIntegral)) {
     return CurrentIntegral{};
   } else if constexpr (sizeof...(Integrals) > 0) {
@@ -137,7 +112,7 @@ consteval auto to_integral() {
 }
 
 template<std::size_t OFFSET>
-auto& get_byte(auto& arg) {
+[[nodiscard]] auto& get_byte(auto& arg) {
   static constexpr bool CONST_QUALIFIED{std::is_const_v<std::remove_reference_t<decltype(arg)>>};
   return reinterpret_cast<std::conditional_t<CONST_QUALIFIED, const std::byte*, std::byte*>>(&arg)[OFFSET];
 }
@@ -167,11 +142,15 @@ void serialize_to_if_endianness_susceptible(auto& dest, const auto& src) {
 template<instance_of<member> Member>
 requires (!endianness_susceptible<typename Member::type>)
 void serialize_to_if_endianness_susceptible(auto& /* dest */, const auto& /* src */) {}
+} // namespace mbsl
 
+export namespace mbsl {
 template<bool ENDIANNESS_MISMATCH, class Allocator = std::allocator<std::byte>>
 requires std::same_as<typename Allocator::value_type, std::byte>
 class dynamic_serializer {
 public:
+  dynamic_serializer() = default;
+
   ~dynamic_serializer() {
     if (m_data) {
       Allocator allocator;
@@ -209,6 +188,9 @@ public:
     m_size = new_size;
   }
 
+  [[nodiscard]] const std::byte* data() const noexcept { return m_data; }
+  [[nodiscard]] std::size_t size() const noexcept { return m_size; }
+
 private:
   std::byte* m_data{};
   std::size_t m_capacity{};
@@ -239,6 +221,31 @@ private:
   }
 };
 
+template<class Container>
+class depot : Container {
+public:
+  using Container::Container;
+  using Container::size;
+
+  template<typename Byte>
+  requires (sizeof(Byte) == 1 && (std::integral<Byte> || std::is_enum_v<Byte>))
+  [[nodiscard]] const Byte* data() const noexcept(noexcept(Container::data())) {
+    return reinterpret_cast<const Byte*>(Container::data());
+  }
+};
+)"};
+
+struct exported_definitions_template {
+  using group_start = field_collection<"\nnamespace ", GROUP_NAME, " {">;
+  using package_start = field_collection<"\nstruct ", PACKAGE_NAME, " {\n">;
+  using member = field_collection<"  ", MEMBER_TYPE, " ", MEMBER_NAME, ";\n">;
+  using package_end = field_collection<"};\n">;
+  using group_end = field_collection<"} // namespace ", GROUP_NAME, "\n">;
+};
+
+constexpr std::string_view TEMPLATE_BODY{R"(} // namespace mbsl
+
+namespace mbsl {
 template<class Package, std::endian ENDIANNESS, instance_of<member>... Members>
 struct package_serializer : std::type_identity<Package> {
 private:
@@ -255,7 +262,7 @@ public:
   }
 
   template<method METHOD>
-  static auto serialize(Package& package)
+  [[nodiscard]] static auto serialize(Package& package)
   requires (NO_EXPLICITLY_SERIALIZABLE_MEMBERS && METHOD == method::MUTABLY) {
     if constexpr (ENDIANNESS_MISMATCH) {
       serialize_endianness_susceptible_members_to(package, package);
@@ -265,7 +272,7 @@ public:
   }
 
   template<method METHOD>
-  static auto serialize(const Package& package)
+  [[nodiscard]] static auto serialize(const Package& package)
   requires (NO_EXPLICITLY_SERIALIZABLE_MEMBERS && METHOD == method::IMMUTABLY) {
     if constexpr (ENDIANNESS_MISMATCH) {
       return serialize<method::NEW>(package);
@@ -275,7 +282,7 @@ public:
   }
 
   template<method METHOD>
-  static auto serialize(const Package& package)
+  [[nodiscard]] static auto serialize(const Package& package)
   requires (NO_EXPLICITLY_SERIALIZABLE_MEMBERS && METHOD == method::NEW) {
     depot<std::array<std::byte, sizeof(package)>> depot;
     serialize_to(depot, package);
@@ -289,7 +296,7 @@ private:
     (serialize_to_if_endianness_susceptible<Members>(dest, src), ...);
   }
 
-  static consteval bool has_valid_member_order() {
+  [[nodiscard]] static consteval bool has_valid_member_order() {
     bool inside_endianness_susceptible_region{};
     bool inside_endianness_resistant_region{};
 
@@ -303,7 +310,7 @@ private:
     }() && ...);
   }
 
-  static consteval std::size_t find_region_offset(const auto is_before_offset) {
+  [[nodiscard]] static consteval std::size_t find_region_offset(const auto is_before_offset) {
     static_assert(has_valid_member_order(),
                   "Expected package members to follow the order: explicitly serializable, endianness susceptible, and endianness resistant");
 
@@ -338,7 +345,7 @@ private:
     }
   }
 
-  static auto construct_view_of(const Package& package) {
+  [[nodiscard]] static auto construct_view_of(const Package& package) {
     return depot<std::span<const std::byte, sizeof(package)>>{reinterpret_cast<const std::byte*>(&package), sizeof(package)};
   }
 };
@@ -348,7 +355,7 @@ template<class Item = void, class... Items>
 struct vendor {
 private:
   template<class Package>
-  static consteval auto find_package_serializer_linked_to() {
+  [[nodiscard]] static consteval auto find_package_serializer_linked_to() {
     if constexpr (std::derived_from<Item, std::type_identity<Package>>) {
       return Item{};
     } else if constexpr (requires { typename Item::template get<Package>; }) {
@@ -369,7 +376,7 @@ public:
 
 template<instance_of<package_serializer>... Serializers>
 struct group : vendor<Serializers...> {
-  static consteval auto get_reflection() {
+  [[nodiscard]] static consteval auto get_reflection() {
     std::array<std::uint8_t, (Serializers::REFLECTION_VALUES_SIZE_BYTES + ... + 0)> reflection{};
     std::ranges::subrange subrange{reflection};
 
@@ -402,20 +409,20 @@ constexpr std::string_view TEMPLATE_END{R"(
 } // namespace
 
 template<method METHOD>
-auto serialize(auto& package) {
+[[nodiscard]] auto serialize(auto& package) {
   using package_type = std::remove_cv_t<std::remove_reference_t<decltype(package)>>;
   return registry::get<package_type>::template serialize<METHOD>(package);
 }
 } // namespace mbsl
 
 export namespace mbsl {
-auto serialize_mutably(auto& package)
+[[nodiscard]] auto serialize_mutably(auto& package)
 requires (!std::is_const_v<std::remove_reference_t<decltype(package)>>) {
   return serialize<method::MUTABLY>(package);
 }
 
-auto serialize_immutably(auto& package) { return serialize<method::IMMUTABLY>(package); }
-auto serialize_new(const auto& package) { return serialize<method::NEW>(package); }
+[[nodiscard]] auto serialize_immutably(auto& package) { return serialize<method::IMMUTABLY>(package); }
+[[nodiscard]] auto serialize_new(const auto& package) { return serialize<method::NEW>(package); }
 } // namespace mbsl
 )"};
 } // namespace library_template

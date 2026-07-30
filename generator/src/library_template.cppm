@@ -174,17 +174,17 @@ public:
   void preallocate(const std::size_t size) { reserve_at_least(m_size + size); }
 
   template<numerical Numerical>
-  void serialize(const Numerical& numerical) {
+  void serialize_without_bounds_checking(const Numerical& numerical) {
+    serialize(numerical);
+    m_size += sizeof(Numerical);
+  }
+
+  template<numerical Numerical>
+  void serialize_with_bounds_checking(const Numerical& numerical) {
     const std::size_t new_size{m_size + sizeof(Numerical)};
+
     reserve_at_least(new_size);
-
-    if constexpr (ENDIANNESS_MISMATCH && endianness_susceptible<Numerical>) {
-      static constexpr std::size_t MEMBER_OFFSET{};
-      serialize_to_if_endianness_susceptible<member<Numerical, MEMBER_OFFSET>>(m_data[m_size], numerical);
-    } else {
-      std::memcpy(m_data + m_size, &numerical, sizeof(Numerical));
-    }
-
+    serialize(numerical);
     m_size = new_size;
   }
 
@@ -218,6 +218,16 @@ private:
 
     m_data = new_data;
     m_capacity = new_capacity;
+  }
+
+  template<numerical Numerical>
+  void serialize(const Numerical& numerical) {
+    if constexpr (ENDIANNESS_MISMATCH && endianness_susceptible<Numerical>) {
+      static constexpr std::size_t MEMBER_OFFSET{};
+      serialize_to_if_endianness_susceptible<member<Numerical, MEMBER_OFFSET>>(m_data[m_size], numerical);
+    } else {
+      std::memcpy(m_data + m_size, &numerical, sizeof(Numerical));
+    }
   }
 };
 

@@ -17,7 +17,7 @@
  */
 
 module parser;
-import writer;
+import package_tracker;
 
 namespace parser {
 namespace {
@@ -84,7 +84,7 @@ bool parse_package_definition(state& state) {
 
   static constexpr std::size_t INITIAL_MEMBER_CAPACITY{8};
   static constexpr std::string_view END{"}"};
-  std::vector<writer::member> members{};
+  std::vector<package_tracker::member> members{};
 
   members.reserve(INITIAL_MEMBER_CAPACITY);
 
@@ -97,7 +97,7 @@ bool parse_package_definition(state& state) {
     members.emplace_back(state.get_current_token(), state.get_next_token());
   }
 
-  const bool unique{writer::add_package(state.group_name_, name, state.package_endianness_, std::move(members))};
+  const bool unique{package_tracker::add(state.group_name_, name, state.package_endianness_, std::move(members))};
 
   if (!unique) {
     std::println(std::cerr, "Error: all packages within a group must have a unique name");

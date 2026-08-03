@@ -17,25 +17,18 @@
  */
 
 module writer;
+import package_tracker;
 import library_template;
 
 namespace writer {
 namespace {
-struct package {
-  std::string_view endianness_{};
-  std::vector<member> members_{};
-};
-
-using package_map = std::flat_map<std::string_view, package>;
-std::flat_map<std::string_view, package_map> g_group_map{};
-
 class library_writer {
 public:
   void write_string(const std::string_view string_view) { m_ofstream << string_view; }
 
   template<typename FieldTemplate>
   void write_field_template() {
-    for (bool first_group{true}; const auto& [group_name, package_map] : g_group_map) {
+    for (bool first_group{true}; const auto& [group_name, package_map] : package_tracker::get_group_map()) {
       m_field_arg_holder.group_name_ = group_name;
       replace_comma_field(first_group);
       write_field_collection<typename FieldTemplate::group_start>();
@@ -69,20 +62,12 @@ private:
   }
 
   template<typename FieldCollection>
-  requires requires(FieldCollection f) { requires std::same_as<FieldCollection, decltype(library_template::field_collection{f})>; }
+  requires requires (FieldCollection f) { requires std::same_as<FieldCollection, decltype(library_template::field_collection{f})>; }
   void write_field_collection() {
     std::ranges::for_each(FieldCollection::resolve(m_field_arg_holder), std::bind_front(&library_writer::write_string, this));
   }
 };
 } // namespace
-
-bool add_package(const std::string_view group_name, const std::string_view package_name, const std::string_view endianness,
-                std::vector<member>&& members) {
-  package_map& package_map{g_group_map.try_emplace(group_name).first->second};
-  const bool unique{package_map.try_emplace(package_name, endianness, std::move(members)).second};
-
-  return unique;
-}
 
 void write_library() {
   library_writer library_writer{};

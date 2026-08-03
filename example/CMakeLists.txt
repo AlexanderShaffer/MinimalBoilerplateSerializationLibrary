@@ -16,11 +16,12 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 ]]
 
-cmake_minimum_required(VERSION 4.3.2)
+cmake_minimum_required(VERSION 4.4.2)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD 451f2fe2-a8a2-47c3-bc32-94786d8fc91b)
+set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD f35a9ac6-8463-4d38-8eec-5d6008153e7d)
 set(CMAKE_CXX_MODULE_STD ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 project(MinimalBoilerplateSerializationLibrary)
 
 set(MBSL_CONFIG_DIR ${CMAKE_CURRENT_LIST_DIR}/config)

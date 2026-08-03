@@ -20,11 +20,5 @@ export module writer;
 import std;
 
 export namespace writer {
-struct member {
-  std::string_view type_{};
-  std::string_view name_{};
-};
-
-bool add_package(std::string_view group_name, std::string_view package_name, std::string_view endianness, std::vector<member>&& members);
 void write_library();
 } // namespace writer

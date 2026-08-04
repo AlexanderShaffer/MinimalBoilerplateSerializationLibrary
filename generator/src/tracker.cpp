@@ -1,4 +1,4 @@
-module package_tracker;
+module tracker;
 
 namespace package_tracker {
 namespace {
@@ -14,3 +14,12 @@ bool add(const std::string_view group_name, const std::string_view package_name,
 
 const group_map& get_group_map() { return g_group_map; }
 } // namespace package_tracker
+
+namespace module_import_tracker {
+namespace {
+std::string g_import_declarations;
+} // namespace
+
+void add(const std::string_view module_name) { g_import_declarations.append("import ").append(module_name).append(";\n"); }
+std::string_view get_import_declarations() { return g_import_declarations; }
+} // namespace module_import_tracker

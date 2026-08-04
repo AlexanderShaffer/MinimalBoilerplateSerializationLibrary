@@ -44,7 +44,7 @@ constexpr replaceable_field PACKAGE_ENDIANNESS{&field_arg_holder::package_endian
 constexpr replaceable_field MEMBER_TYPE{&field_arg_holder::member_type_};
 constexpr replaceable_field MEMBER_NAME{&field_arg_holder::member_name_};
 
-constexpr std::string_view TEMPLATE_START{R"(/*
+constexpr std::string_view SECTION_1{R"(/*
  * This file is part of MinimalBoilerplateSerializationLibrary.
  * Copyright (C) 2026 Alexander Shaffer <alexander.shaffer.623@gmail.com>
  *
@@ -66,7 +66,9 @@ module;
 #include <cstddef>
 export module mbsl;
 import std;
+)"};
 
+constexpr std::string_view SECTION_2{R"(
 static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big, "Mixed endianness is unsupported");
 
 namespace mbsl {
@@ -263,7 +265,7 @@ struct exported_definitions_template {
   using group_end = field_collection<"} // namespace ", GROUP_NAME, "\n">;
 };
 
-constexpr std::string_view TEMPLATE_BODY{R"(} // namespace mbsl
+constexpr std::string_view SECTION_3{R"(} // namespace mbsl
 
 namespace mbsl {
 template<class Package, std::endian ENDIANNESS, instance_of<member>... Members>
@@ -424,7 +426,7 @@ struct registry_template {
   using group_end = field_collection<"\n  >">;
 };
 
-constexpr std::string_view TEMPLATE_END{R"(
+constexpr std::string_view SECTION_4{R"(
 >;
 } // namespace
 

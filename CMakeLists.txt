@@ -32,14 +32,14 @@ add_executable(Generator)
 
 target_sources(
   Generator
-  PRIVATE generator/src/main.cpp generator/src/package_tracker.cpp generator/src/parser.cpp generator/src/writer.cpp
+  PRIVATE generator/src/main.cpp generator/src/parser.cpp generator/src/tracker.cpp generator/src/writer.cpp
   PRIVATE FILE_SET
           CXX_MODULES
           FILES
           generator/src/library_template.cppm
           generator/src/library_template-field.cppm
-          generator/src/package_tracker.cppm
           generator/src/parser.cppm
+          generator/src/tracker.cppm
           generator/src/writer.cppm
 )
 

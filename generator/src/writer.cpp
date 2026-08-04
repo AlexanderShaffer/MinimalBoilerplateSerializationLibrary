@@ -17,7 +17,7 @@
  */
 
 module writer;
-import package_tracker;
+import tracker;
 import library_template;
 
 namespace writer {
@@ -74,10 +74,12 @@ private:
 void write_library() {
   library_writer library_writer;
 
-  library_writer.write_string(library_template::TEMPLATE_START);
+  library_writer.write_string(library_template::SECTION_1);
+  library_writer.write_string(module_import_tracker::get_import_declarations());
+  library_writer.write_string(library_template::SECTION_2);
   library_writer.write_field_template<library_template::exported_definitions_template>();
-  library_writer.write_string(library_template::TEMPLATE_BODY);
+  library_writer.write_string(library_template::SECTION_3);
   library_writer.write_field_template<library_template::registry_template>();
-  library_writer.write_string(library_template::TEMPLATE_END);
+  library_writer.write_string(library_template::SECTION_4);
 }
 } // namespace writer

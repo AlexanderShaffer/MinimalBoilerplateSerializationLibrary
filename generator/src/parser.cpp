@@ -17,7 +17,7 @@
  */
 
 module parser;
-import package_tracker;
+import tracker;
 
 namespace parser {
 namespace {
@@ -106,6 +106,11 @@ bool parse_package_definition(state& state) {
   return unique;
 }
 
+bool parse_import_declaration(state& state) {
+  module_import_tracker::add(state.get_next_token());
+  return true;
+}
+
 bool parse_unrecognized_token(state& state) {
   std::println(std::cerr, "Error: unrecognized token \"{}\"", state.get_current_token());
   return false;
@@ -114,7 +119,8 @@ bool parse_unrecognized_token(state& state) {
 token_parser get_token_parser(const std::string_view token) {
   static const std::unordered_map TOKEN_PARSERS{create_assignment_parser<&state::group_name_>("group"),
                                                 create_assignment_parser<&state::package_endianness_>("endianness"),
-                                                {"package", parse_package_definition}};
+                                                {"package", parse_package_definition},
+                                                {"import", parse_import_declaration}};
 
   if (const auto iterator{TOKEN_PARSERS.find(token)}; iterator != TOKEN_PARSERS.end()) {
     return iterator->second;

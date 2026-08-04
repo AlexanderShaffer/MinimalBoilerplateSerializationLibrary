@@ -1,4 +1,4 @@
-export module package_tracker;
+export module tracker;
 import std;
 
 export namespace package_tracker {
@@ -18,3 +18,8 @@ using group_map = std::flat_map<std::string_view, package_map>;
 bool add(std::string_view group_name, std::string_view package_name, std::string_view endianness, std::vector<member>&& members);
 [[nodiscard]] const group_map& get_group_map();
 } // namespace package_tracker
+
+export namespace module_import_tracker {
+void add(std::string_view module_name);
+[[nodiscard]] std::string_view get_import_declarations();
+} // namespace module_import_tracker

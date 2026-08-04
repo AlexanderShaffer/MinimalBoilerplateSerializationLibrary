@@ -95,14 +95,14 @@ public:
   dynamic_serializer() = default;
 
   ~dynamic_serializer() {
-    if (m_data) {
-      deallocate(m_data, m_capacity);
+    if (m_span.data()) {
+      deallocate(m_span.data(), m_span.size());
     }
   }
 
   dynamic_serializer(const dynamic_serializer& other) : m_size{other.m_size} {
     reserve_at_least(other.m_size);
-    std::memcpy(m_data, other.m_data, other.m_size);
+    std::memcpy(m_span.data(), other.m_span.data(), other.m_size);
   }
 
   dynamic_serializer(dynamic_serializer&& other) noexcept { swap(other); }
@@ -129,35 +129,32 @@ public:
     m_size = new_size;
   }
 
-  [[nodiscard]] const std::byte* data() const noexcept { return m_data; }
+  [[nodiscard]] const std::byte* data() const noexcept { return m_span.data(); }
   [[nodiscard]] std::size_t size() const noexcept { return m_size; }
 
 private:
-  std::byte* m_data{};
-  std::size_t m_capacity{};
+  std::span<std::byte> m_span;
   std::size_t m_size{};
 
   void swap(dynamic_serializer& other) noexcept {
-    std::swap(m_data, other.m_data);
-    std::swap(m_capacity, other.m_capacity);
+    std::swap(m_span, other.m_span);
     std::swap(m_size, other.m_size);
   }
 
   void reserve_at_least(const std::size_t min_capacity) {
-    if (min_capacity <= m_capacity) {
+    if (min_capacity <= m_span.size()) {
       return;
     }
 
     const std::size_t new_capacity{min_capacity * 2};
-    std::byte* const new_data{allocate(new_capacity)};
+    const std::span new_span{allocate(new_capacity), new_capacity};
 
-    if (m_data) {
-      std::memcpy(new_data, m_data, m_size);
-      deallocate(m_data, m_capacity);
+    if (m_span.data()) {
+      std::memcpy(new_span.data(), m_span.data(), m_size);
+      deallocate(m_span.data(), m_span.size());
     }
 
-    m_data = new_data;
-    m_capacity = new_capacity;
+    m_span = new_span;
   }
 
   template<numerical Numerical>
@@ -237,9 +234,9 @@ template<numerical Numerical>
 void dynamic_serializer<ENDIANNESS_MISMATCH>::serialize(const Numerical& numerical) {
   if constexpr (ENDIANNESS_MISMATCH && endianness_susceptible<Numerical>) {
     static constexpr std::size_t MEMBER_OFFSET{};
-    serialize_to_if_endianness_susceptible<member<Numerical, MEMBER_OFFSET>>(m_data[m_size], numerical);
+    serialize_to_if_endianness_susceptible<member<Numerical, MEMBER_OFFSET>>(m_span[m_size], numerical);
   } else {
-    std::memcpy(m_data + m_size, &numerical, sizeof(Numerical));
+    std::memcpy(&m_span[m_size], &numerical, sizeof(Numerical));
   }
 }
 

@@ -23,7 +23,7 @@ namespace parser {
 namespace {
 class state {
 public:
-  std::string_view group_name_{};
+  std::string_view group_name_{"group"};
   std::string_view package_endianness_{"little"};
 
   explicit state(const std::string_view config) : m_config{config} {}
@@ -50,8 +50,8 @@ public:
   [[nodiscard]] std::string_view get_current_token() const { return m_token; }
 
 private:
-  std::string_view m_config{};
-  std::string_view m_token{};
+  std::string_view m_config;
+  std::string_view m_token;
 
   bool ignore_comment(const std::string_view start_delimiter, const std::string_view end_delimiter) {
     if (!m_config.starts_with(start_delimiter)) {
@@ -84,7 +84,7 @@ bool parse_package_definition(state& state) {
 
   static constexpr std::size_t INITIAL_MEMBER_CAPACITY{8};
   static constexpr std::string_view END{"}"};
-  std::vector<package_tracker::member> members{};
+  std::vector<package_tracker::member> members;
 
   members.reserve(INITIAL_MEMBER_CAPACITY);
 

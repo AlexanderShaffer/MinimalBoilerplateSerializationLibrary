@@ -24,7 +24,7 @@ export struct field_arg_holder;
 
 template<std::size_t SIZE>
 struct field {
-  std::array<char, SIZE - 1> string_{};
+  std::array<char, SIZE - 1> string_;
 
   consteval field(const char (&string)[SIZE]) { std::copy_n(string, string_.size(), string_.begin()); }
 

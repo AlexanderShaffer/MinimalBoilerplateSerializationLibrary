@@ -22,6 +22,9 @@ import library_template;
 
 namespace writer {
 namespace {
+template<typename T>
+concept instance_of_field_collection = requires (T t) { requires std::same_as<T, decltype(library_template::field_collection{t})>; };
+
 class library_writer {
 public:
   void write_string(const std::string_view string_view) { m_ofstream << string_view; }
@@ -54,15 +57,14 @@ public:
 
 private:
   std::ofstream m_ofstream{"mbsl.cppm"};
-  library_template::field_arg_holder m_field_arg_holder{};
+  library_template::field_arg_holder m_field_arg_holder;
 
   void replace_comma_field(bool& ignore) {
     m_field_arg_holder.comma_ = ignore ? "" : ",\n";
     ignore = false;
   }
 
-  template<typename FieldCollection>
-  requires requires (FieldCollection f) { requires std::same_as<FieldCollection, decltype(library_template::field_collection{f})>; }
+  template<instance_of_field_collection FieldCollection>
   void write_field_collection() {
     std::ranges::for_each(FieldCollection::resolve(m_field_arg_holder), std::bind_front(&library_writer::write_string, this));
   }
@@ -70,7 +72,7 @@ private:
 } // namespace
 
 void write_library() {
-  library_writer library_writer{};
+  library_writer library_writer;
 
   library_writer.write_string(library_template::TEMPLATE_START);
   library_writer.write_field_template<library_template::exported_definitions_template>();

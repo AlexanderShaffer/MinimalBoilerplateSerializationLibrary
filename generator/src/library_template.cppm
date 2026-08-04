@@ -22,12 +22,12 @@ import :field;
 
 export namespace library_template {
 struct field_arg_holder {
-  std::string_view comma_{};
-  std::string_view group_name_{};
-  std::string_view package_name_{};
-  std::string_view package_endianness_{};
-  std::string_view member_type_{};
-  std::string_view member_name_{};
+  std::string_view comma_;
+  std::string_view group_name_;
+  std::string_view package_name_;
+  std::string_view package_endianness_;
+  std::string_view member_type_;
+  std::string_view member_name_;
 };
 
 template<field... FIELDS>
@@ -37,12 +37,12 @@ struct field_collection {
   }
 };
 
-constexpr replaceable_field COMMA{.field_param_ = &field_arg_holder::comma_};
-constexpr replaceable_field GROUP_NAME{.field_param_ = &field_arg_holder::group_name_};
-constexpr replaceable_field PACKAGE_NAME{.field_param_ = &field_arg_holder::package_name_};
-constexpr replaceable_field PACKAGE_ENDIANNESS{.field_param_ = &field_arg_holder::package_endianness_};
-constexpr replaceable_field MEMBER_TYPE{.field_param_ = &field_arg_holder::member_type_};
-constexpr replaceable_field MEMBER_NAME{.field_param_ = &field_arg_holder::member_name_};
+constexpr replaceable_field COMMA{&field_arg_holder::comma_};
+constexpr replaceable_field GROUP_NAME{&field_arg_holder::group_name_};
+constexpr replaceable_field PACKAGE_NAME{&field_arg_holder::package_name_};
+constexpr replaceable_field PACKAGE_ENDIANNESS{&field_arg_holder::package_endianness_};
+constexpr replaceable_field MEMBER_TYPE{&field_arg_holder::member_type_};
+constexpr replaceable_field MEMBER_NAME{&field_arg_holder::member_name_};
 
 constexpr std::string_view TEMPLATE_START{R"(/*
  * This file is part of MinimalBoilerplateSerializationLibrary.
@@ -387,7 +387,7 @@ public:
 template<instance_of<package_serializer>... Serializers>
 struct group : vendor<Serializers...> {
   [[nodiscard]] static consteval auto get_reflection() {
-    std::array<std::uint8_t, (Serializers::REFLECTION_VALUES_SIZE_BYTES + ... + 0)> reflection{};
+    std::array<std::uint8_t, (Serializers::REFLECTION_VALUES_SIZE_BYTES + ... + 0)> reflection;
     std::ranges::subrange subrange{reflection};
 
     for (const std::initializer_list<std::size_t> values : {Serializers::REFLECTION_VALUES...}) {

@@ -2,7 +2,7 @@ module package_tracker;
 
 namespace package_tracker {
 namespace {
-group_map g_group_map{};
+group_map g_group_map;
 } // namespace
 
 bool add(const std::string_view group_name, const std::string_view package_name, const std::string_view endianness, std::vector<member>&& members) {

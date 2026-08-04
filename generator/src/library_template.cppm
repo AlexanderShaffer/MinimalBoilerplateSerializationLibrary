@@ -70,9 +70,6 @@ import std;
 static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big, "Mixed endianness is unsupported");
 
 namespace mbsl {
-template<typename T>
-concept explicitly_serializable = false; // TODO: Implement this concept
-
 template<typename T, template<typename, auto> class Template>
 concept instance_of = requires (T t) { requires std::same_as<T, decltype(Template(t))>; };
 
@@ -87,81 +84,23 @@ template<typename T>
 
 template<typename T>
 concept numerical = is_numerical<T>();
-
-template<typename T>
-concept endianness_susceptible = alignof(T) > 1 && numerical<T>;
-
-template<typename T>
-concept endianness_resistant = alignof(T) == 1 && numerical<T>;
-
-template<typename T, std::size_t OFFSET_>
-requires explicitly_serializable<T> || endianness_susceptible<T> || endianness_resistant<T>
-struct member : std::type_identity<T> {
-  static constexpr std::size_t OFFSET{OFFSET_};
-};
-
-enum class method : std::uint8_t { MUTABLY, IMMUTABLY, NEW };
-
-template<instance_of<member> Member, std::integral CurrentIntegral, std::integral... Integrals>
-[[nodiscard]] consteval auto to_integral() {
-  if constexpr (sizeof(typename Member::type) == sizeof(CurrentIntegral)) {
-    return CurrentIntegral{};
-  } else if constexpr (sizeof...(Integrals) > 0) {
-    return to_integral<Member, Integrals...>();
-  }
-}
-
-template<std::size_t OFFSET>
-[[nodiscard]] auto& get_byte(auto& arg) {
-  static constexpr bool CONST_QUALIFIED{std::is_const_v<std::remove_reference_t<decltype(arg)>>};
-  return reinterpret_cast<std::conditional_t<CONST_QUALIFIED, const std::byte*, std::byte*>>(&arg)[OFFSET];
-}
-
-template<instance_of<member> Member>
-requires (endianness_susceptible<typename Member::type> && !instance_of<typename Member::type, std::array>)
-void serialize_to_if_endianness_susceptible(auto& dest, const auto& src) {
-  using integral = decltype(to_integral<Member, std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t>());
-  static_assert(!std::is_void_v<integral>, "Member type sizes must be powers of 2 and at most 8 bytes");
-
-  integral& integral_dest{reinterpret_cast<integral&>(get_byte<Member::OFFSET>(dest))};
-  const integral& integral_src{reinterpret_cast<const integral&>(get_byte<Member::OFFSET>(src))};
-  integral_dest = std::byteswap(integral_src);
-}
-
-template<instance_of<member> ArrayMember, std::size_t INDEX = 0>
-requires (endianness_susceptible<typename ArrayMember::type> && instance_of<typename ArrayMember::type, std::array>)
-void serialize_to_if_endianness_susceptible(auto& dest, const auto& src) {
-  if constexpr (INDEX < std::tuple_size_v<typename ArrayMember::type>) {
-    static constexpr std::size_t ELEMENT_OFFSET{ArrayMember::OFFSET + (INDEX * sizeof(typename ArrayMember::type::value_type))};
-
-    serialize_to_if_endianness_susceptible<member<typename ArrayMember::type::value_type, ELEMENT_OFFSET>>(dest, src);
-    serialize_to_if_endianness_susceptible<ArrayMember, INDEX + 1>(dest, src);
-  }
-}
-
-template<instance_of<member> Member>
-requires (!endianness_susceptible<typename Member::type>)
-void serialize_to_if_endianness_susceptible(auto& /* dest */, const auto& /* src */) {}
 } // namespace mbsl
 
 export namespace mbsl {
-template<bool ENDIANNESS_MISMATCH, class Allocator = std::allocator<std::byte>>
-requires std::same_as<typename Allocator::value_type, std::byte>
-class dynamic_serializer {
+template<bool /* ENDIANNESS_MISMATCH */>
+class dynamic_serializer : std::allocator<std::byte> {
 public:
   dynamic_serializer() = default;
 
   ~dynamic_serializer() {
     if (m_data) {
-      Allocator allocator;
-      allocator.deallocate(m_data, m_capacity);
+      deallocate(m_data, m_capacity);
     }
   }
 
-  dynamic_serializer(const dynamic_serializer& other) {
+  dynamic_serializer(const dynamic_serializer& other) : m_size{other.m_size} {
     reserve_at_least(other.m_size);
     std::memcpy(m_data, other.m_data, other.m_size);
-    m_size = other.m_size;
   }
 
   dynamic_serializer(dynamic_serializer&& other) noexcept { swap(other); }
@@ -208,12 +147,11 @@ private:
     }
 
     const std::size_t new_capacity{min_capacity * 2};
-    Allocator allocator;
-    std::byte* const new_data{allocator.allocate(new_capacity)};
+    std::byte* const new_data{allocate(new_capacity)};
 
     if (m_data) {
       std::memcpy(new_data, m_data, m_size);
-      allocator.deallocate(m_data, m_capacity);
+      deallocate(m_data, m_capacity);
     }
 
     m_data = new_data;
@@ -221,15 +159,87 @@ private:
   }
 
   template<numerical Numerical>
-  void serialize(const Numerical& numerical) {
-    if constexpr (ENDIANNESS_MISMATCH && endianness_susceptible<Numerical>) {
-      static constexpr std::size_t MEMBER_OFFSET{};
-      serialize_to_if_endianness_susceptible<member<Numerical, MEMBER_OFFSET>>(m_data[m_size], numerical);
-    } else {
-      std::memcpy(m_data + m_size, &numerical, sizeof(Numerical));
-    }
-  }
+  void serialize(const Numerical& numerical);
 };
+
+template<typename T>
+concept instance_of_dynamic_serializer = requires (T t) { requires std::same_as<T, decltype(dynamic_serializer{t})>; };
+} // namespace mbsl
+
+namespace mbsl {
+template<typename T, bool ENDIANNESS_MISMATCH>
+concept explicitly_serializable_helper = requires (const T t) { serialize(dynamic_serializer<ENDIANNESS_MISMATCH>{}, t); };
+
+template<typename T>
+concept explicitly_serializable = explicitly_serializable_helper<T, false> && explicitly_serializable_helper<T, true>;
+
+template<typename T>
+concept endianness_susceptible = alignof(T) > 1 && numerical<T>;
+
+template<typename T>
+concept endianness_resistant = alignof(T) == 1 && numerical<T>;
+
+template<typename T, std::size_t OFFSET_>
+requires explicitly_serializable<T> || endianness_susceptible<T> || endianness_resistant<T>
+struct member : std::type_identity<T> {
+  static constexpr std::size_t OFFSET{OFFSET_};
+};
+
+enum class method : std::uint8_t { MUTABLY, IMMUTABLY, NEW };
+
+template<instance_of<member> Member, std::integral CurrentIntegral, std::integral... Integrals>
+[[nodiscard]] consteval auto to_integral() {
+  if constexpr (sizeof(typename Member::type) == sizeof(CurrentIntegral)) {
+    return CurrentIntegral{};
+  } else if constexpr (sizeof...(Integrals) > 0) {
+    return to_integral<Member, Integrals...>();
+  }
+}
+
+template<std::size_t OFFSET>
+[[nodiscard]] auto& get_byte(auto& arg) {
+  static constexpr bool CONST{std::is_const_v<std::remove_reference_t<decltype(arg)>>};
+  return reinterpret_cast<std::conditional_t<CONST, const std::byte*, std::byte*>>(&arg)[OFFSET];
+}
+
+template<instance_of<member> Member>
+requires (endianness_susceptible<typename Member::type> && !instance_of<typename Member::type, std::array>)
+void serialize_to_if_endianness_susceptible(auto& dest, const auto& src) {
+  using integral = decltype(to_integral<Member, std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t>());
+  static_assert(!std::is_void_v<integral>, "Member type sizes must be powers of 2 and at most 8 bytes");
+
+  integral& integral_dest{reinterpret_cast<integral&>(get_byte<Member::OFFSET>(dest))};
+  const integral& integral_src{reinterpret_cast<const integral&>(get_byte<Member::OFFSET>(src))};
+  integral_dest = std::byteswap(integral_src);
+}
+
+template<instance_of<member> ArrayMember, std::size_t INDEX = 0>
+requires (endianness_susceptible<typename ArrayMember::type> && instance_of<typename ArrayMember::type, std::array>)
+void serialize_to_if_endianness_susceptible(auto& dest, const auto& src) {
+  if constexpr (INDEX < std::tuple_size_v<typename ArrayMember::type>) {
+    static constexpr std::size_t ELEMENT_OFFSET{ArrayMember::OFFSET + (INDEX * sizeof(typename ArrayMember::type::value_type))};
+
+    serialize_to_if_endianness_susceptible<member<typename ArrayMember::type::value_type, ELEMENT_OFFSET>>(dest, src);
+    serialize_to_if_endianness_susceptible<ArrayMember, INDEX + 1>(dest, src);
+  }
+}
+
+template<instance_of<member> Member>
+requires (!endianness_susceptible<typename Member::type>)
+void serialize_to_if_endianness_susceptible(auto& /* dest */, const auto& /* src */) {}
+} // namespace mbsl
+
+export namespace mbsl {
+template<bool ENDIANNESS_MISMATCH>
+template<numerical Numerical>
+void dynamic_serializer<ENDIANNESS_MISMATCH>::serialize(const Numerical& numerical) {
+  if constexpr (ENDIANNESS_MISMATCH && endianness_susceptible<Numerical>) {
+    static constexpr std::size_t MEMBER_OFFSET{};
+    serialize_to_if_endianness_susceptible<member<Numerical, MEMBER_OFFSET>>(m_data[m_size], numerical);
+  } else {
+    std::memcpy(m_data + m_size, &numerical, sizeof(Numerical));
+  }
+}
 
 template<class Container>
 class depot : Container {

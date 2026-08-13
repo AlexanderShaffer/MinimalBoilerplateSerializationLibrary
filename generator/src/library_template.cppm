@@ -104,88 +104,7 @@ struct member : std::type_identity<T> {
 
 export namespace mbsl {
 template<bool /* ENDIANNESS_MISMATCH */>
-class dynamic_serializer : std::allocator<std::byte> {
-public:
-  dynamic_serializer() = default;
-
-  ~dynamic_serializer() {
-    if (m_span.data()) {
-      deallocate(m_span.data(), m_span.size());
-    }
-  }
-
-  dynamic_serializer(const dynamic_serializer& other) : m_size{other.m_size} {
-    reserve_at_least(other.m_size);
-    std::memcpy(m_span.data(), other.m_span.data(), other.m_size);
-  }
-
-  dynamic_serializer(dynamic_serializer&& other) noexcept { swap(other); }
-
-  dynamic_serializer& operator=(dynamic_serializer other) {
-    swap(other);
-    return *this;
-  }
-
-  std::size_t preallocate(const std::size_t size) {
-    const std::size_t min_capacity{m_size + size};
-
-    reserve_at_least(min_capacity);
-    return min_capacity;
-  }
-
-  template<numerical Numerical>
-  void serialize_without_bounds_checking(const Numerical& numerical) {
-    serialize(numerical);
-    m_size += sizeof(Numerical);
-  }
-
-  template<numerical Numerical>
-  void serialize_with_bounds_checking(const Numerical& numerical) {
-    const std::size_t new_size{preallocate(sizeof(Numerical))};
-
-    serialize(numerical);
-    m_size = new_size;
-  }
-
-  std::span<std::byte> append(const std::size_t size) {
-    const std::size_t new_size{preallocate(size)};
-    const std::span appended_data{m_span.subspan(m_size, size)};
-
-    m_size = new_size;
-    return appended_data;
-  }
-
-  [[nodiscard]] const std::byte* data() const noexcept { return m_span.data(); }
-  [[nodiscard]] std::size_t size() const noexcept { return m_size; }
-
-private:
-  std::span<std::byte> m_span;
-  std::size_t m_size{};
-
-  void swap(dynamic_serializer& other) noexcept {
-    std::swap(m_span, other.m_span);
-    std::swap(m_size, other.m_size);
-  }
-
-  void reserve_at_least(const std::size_t min_capacity) {
-    if (min_capacity <= m_span.size()) {
-      return;
-    }
-
-    const std::size_t new_capacity{min_capacity * 2};
-    const std::span new_span{allocate(new_capacity), new_capacity};
-
-    if (m_span.data()) {
-      std::memcpy(new_span.data(), m_span.data(), m_size);
-      deallocate(m_span.data(), m_span.size());
-    }
-
-    m_span = new_span;
-  }
-
-  template<numerical Numerical>
-  void serialize(const Numerical& numerical);
-};
+class dynamic_serializer;
 
 template<typename T>
 concept instance_of_dynamic_serializer = requires (T t) { requires std::same_as<T, decltype(dynamic_serializer{t})>; };
@@ -195,11 +114,10 @@ struct explicit_serializer;
 
 enum class method : std::uint8_t { MUTABLY, IMMUTABLY, NEW };
 
-[[nodiscard]] auto to_span(auto& data) {
-  static constexpr bool CONST{std::is_const_v<std::remove_reference_t<decltype(data)>>};
-  using byte_type = std::conditional_t<CONST, const std::byte, std::byte>;
-
-  return std::span<byte_type, sizeof(data)>{reinterpret_cast<byte_type*>(&data), sizeof(data)};
+template<typename T>
+[[nodiscard]] auto to_span(T& t) {
+  using byte_type = std::conditional_t<std::is_const_v<T>, const std::byte, std::byte>;
+  return std::span<byte_type, sizeof(T)>{reinterpret_cast<byte_type*>(&t), sizeof(T)};
 }
 
 template<bool ENDIANNESS_MISMATCH, instance_of<member>... Members>
@@ -326,10 +244,100 @@ private:
 };
 
 template<bool ENDIANNESS_MISMATCH>
-template<numerical Numerical>
-void dynamic_serializer<ENDIANNESS_MISMATCH>::serialize(const Numerical& numerical) {
-  member_serializer<ENDIANNESS_MISMATCH, member<Numerical>>::serialize_implicitly_serializable_members_to(m_span.subspan(m_size), to_span(numerical));
-}
+class dynamic_serializer : std::allocator<std::byte> {
+  template<typename T>
+  using member_serializer = member_serializer<ENDIANNESS_MISMATCH, member<T>>;
+
+  template<typename T>
+  static constexpr bool SERIALIZABLE{member_serializer<T>::VALID_MEMBERS};
+
+public:
+  dynamic_serializer() = default;
+
+  ~dynamic_serializer() {
+    if (m_span.data()) {
+      deallocate(m_span.data(), m_span.size());
+    }
+  }
+
+  dynamic_serializer(const dynamic_serializer& other) : m_size{other.m_size} {
+    reserve_at_least(other.m_size);
+    std::memcpy(m_span.data(), other.m_span.data(), other.m_size);
+  }
+
+  dynamic_serializer(dynamic_serializer&& other) noexcept { swap(other); }
+
+  dynamic_serializer& operator=(dynamic_serializer other) {
+    swap(other);
+    return *this;
+  }
+
+  void preallocate(const std::size_t size) { reserve_at_least(m_size + size); }
+
+  void serialize(const auto& serializable) {
+    static constexpr bool BOUNDS_CHECKING{true};
+    serialize<BOUNDS_CHECKING>(serializable);
+  }
+
+  void serialize_without_bounds_checking(const auto& serializable) {
+    static constexpr bool BOUNDS_CHECKING{false};
+    serialize<BOUNDS_CHECKING>(serializable);
+  }
+
+  std::span<std::byte> append(const std::size_t size) {
+    const std::size_t new_size{m_size + size};
+    reserve_at_least(new_size);
+
+    const std::span appended_data{m_span.subspan(m_size, size)};
+    m_size = new_size;
+    return appended_data;
+  }
+
+  [[nodiscard]] const std::byte* data() const noexcept { return m_span.data(); }
+  [[nodiscard]] std::size_t size() const noexcept { return m_size; }
+
+private:
+  std::span<std::byte> m_span;
+  std::size_t m_size{};
+
+  void swap(dynamic_serializer& other) noexcept {
+    std::swap(m_span, other.m_span);
+    std::swap(m_size, other.m_size);
+  }
+
+  void reserve_at_least(const std::size_t min_capacity) {
+    if (min_capacity <= m_span.size()) {
+      return;
+    }
+
+    const std::size_t new_capacity{min_capacity * 2};
+    const std::span new_span{allocate(new_capacity), new_capacity};
+
+    if (m_span.data()) {
+      std::memcpy(new_span.data(), m_span.data(), m_size);
+      deallocate(m_span.data(), m_span.size());
+    }
+
+    m_span = new_span;
+  }
+
+  template<bool BOUNDS_CHECKING, typename Serializable>
+  requires SERIALIZABLE<Serializable>
+  void serialize(const Serializable& serializable) {
+    if constexpr (implicitly_serializable<member<Serializable>>) {
+      const std::size_t new_size{m_size + sizeof(Serializable)};
+
+      if constexpr (BOUNDS_CHECKING) {
+        reserve_at_least(new_size);
+      }
+
+      member_serializer<Serializable>::serialize_implicitly_serializable_members_to(m_span.subspan(m_size), to_span(serializable));
+      m_size = new_size;
+    } else {
+      explicit_serializer<dynamic_serializer>::serialize(*this, serializable);
+    }
+  }
+};
 
 template<class Container>
 class depot : Container {
@@ -390,7 +398,7 @@ public:
       member_serializer::serialize_endianness_susceptible_members_to(src_dest, src_dest);
     }
 
-    return to_depot_span(src_dest);
+    return to_depot(src_dest);
   }
 
   template<method METHOD, size_t PACKAGE_SIZE>
@@ -399,7 +407,7 @@ public:
     if constexpr (ENDIANNESS_MISMATCH) {
       return serialize<method::NEW>(src_dest);
     } else {
-      return to_depot_span(src_dest);
+      return to_depot(src_dest);
     }
   }
 
@@ -413,8 +421,8 @@ public:
 
 private:
   template<typename T, std::size_t PACKAGE_SIZE>
-  [[nodiscard]] static auto to_depot_span(const std::span<T, PACKAGE_SIZE> package) {
-    return depot<decltype(package)>{package.data(), package.size()};
+  [[nodiscard]] static auto to_depot(const std::span<T, PACKAGE_SIZE> package) {
+    return depot<std::span<const T, PACKAGE_SIZE>>{package.data(), package.size()};
   }
 };
 
@@ -476,16 +484,16 @@ constexpr std::string_view SECTION_4{R"(
 >;
 } // namespace
 
-template<method METHOD>
-[[nodiscard]] auto serialize(auto& package) {
-  using package_type = std::remove_cv_t<std::remove_reference_t<decltype(package)>>;
-  return registry::get<package_type>::template serialize<METHOD>(to_span(package));
+template<method METHOD, typename Package>
+[[nodiscard]] auto serialize(Package& package) {
+  return registry::get<std::remove_const_t<Package>>::template serialize<METHOD>(to_span(package));
 }
 } // namespace mbsl
 
 export namespace mbsl {
-[[nodiscard]] auto serialize_mutably(auto& package)
-requires (!std::is_const_v<std::remove_reference_t<decltype(package)>>) {
+template<typename Package>
+requires (!std::is_const_v<Package>)
+[[nodiscard]] auto serialize_mutably(Package& package) {
   return serialize<method::MUTABLY>(package);
 }
 

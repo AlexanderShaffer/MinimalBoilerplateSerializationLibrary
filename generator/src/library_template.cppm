@@ -69,8 +69,6 @@ import std;
 )"};
 
 constexpr std::string_view SECTION_2{R"(
-static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big, "Mixed endianness is unsupported");
-
 namespace mbsl {
 template<typename T, template<typename, auto> class Template>
 concept instance_of = requires (T t) { requires std::same_as<T, decltype(Template(t))>; };
@@ -168,6 +166,9 @@ private:
   static constexpr std::size_t ENDIANNESS_RESISTANT_REGION_END{find_region_offset([]<typename /* Member */> { return true; })};
 
 public:
+  static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big || (!endianness_susceptible<Members> && ...),
+                "Endianness-susceptible members on mixed-endian systems are unsupported");
+
   static constexpr bool VALID_MEMBERS{((EXPLICITLY_SERIALIZABLE<Members> || implicitly_serializable<Members>) && ...)};
   static constexpr bool HAS_EXPLICITLY_SERIALIZABLE_MEMBER{(EXPLICITLY_SERIALIZABLE<Members> || ...)};
 
@@ -369,7 +370,7 @@ namespace mbsl {
 template<class Package, std::endian ENDIANNESS, instance_of<member>... Members>
 struct package_serializer : std::type_identity<Package> {
 private:
-  static constexpr bool ENDIANNESS_MISMATCH{std::endian::native != ENDIANNESS};
+  static constexpr bool ENDIANNESS_MISMATCH{std::endian::native != ENDIANNESS && (endianness_susceptible<Members> || ...)};
 
   using member_serializer = member_serializer<ENDIANNESS_MISMATCH, Members...>;
 

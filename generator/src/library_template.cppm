@@ -126,7 +126,12 @@ public:
     return *this;
   }
 
-  void preallocate(const std::size_t size) { reserve_at_least(m_size + size); }
+  std::size_t preallocate(const std::size_t size) {
+    const std::size_t min_capacity{m_size + size};
+
+    reserve_at_least(min_capacity);
+    return min_capacity;
+  }
 
   template<numerical Numerical>
   void serialize_without_bounds_checking(const Numerical& numerical) {
@@ -136,11 +141,18 @@ public:
 
   template<numerical Numerical>
   void serialize_with_bounds_checking(const Numerical& numerical) {
-    const std::size_t new_size{m_size + sizeof(Numerical)};
+    const std::size_t new_size{preallocate(sizeof(Numerical))};
 
-    reserve_at_least(new_size);
     serialize(numerical);
     m_size = new_size;
+  }
+
+  std::span<std::byte> append(const std::size_t size) {
+    const std::size_t new_size{preallocate(size)};
+    const std::span appended_data{m_span.subspan(m_size, size)};
+
+    m_size = new_size;
+    return appended_data;
   }
 
   [[nodiscard]] const std::byte* data() const noexcept { return m_span.data(); }
@@ -196,73 +208,6 @@ private:
   using dynamic_serializer = dynamic_serializer<ENDIANNESS_MISMATCH>;
   using explicit_serializer = explicit_serializer<dynamic_serializer>;
 
-  template<instance_of<member> Member>
-  static constexpr bool EXPLICITLY_SERIALIZABLE{requires (dynamic_serializer d, const Member::type t) {
-    explicit_serializer::serialize(d, t);
-    requires std::same_as<typename Member::type, decltype(explicit_serializer::template deserialize<typename Member::type>(std::span<std::byte>{}))>;
-  } && !implicitly_serializable<Member>};
-
-public:
-  static constexpr bool VALID_MEMBERS{((EXPLICITLY_SERIALIZABLE<Members> || implicitly_serializable<Members>) && ...)};
-  static constexpr bool HAS_EXPLICITLY_SERIALIZABLE_MEMBER{(EXPLICITLY_SERIALIZABLE<Members> || ...)};
-
-  template<method GIVEN_METHOD, method PREFERRED_METHOD>
-  static constexpr bool VALID_METHOD{VALID_MEMBERS && !HAS_EXPLICITLY_SERIALIZABLE_MEMBER && GIVEN_METHOD == PREFERRED_METHOD};
-
-  static void serialize_endianness_susceptible_members_to(const std::span<std::byte> dest, const std::span<const std::byte> src) {
-    (serialize_to_if_endianness_susceptible<Members>(dest, src), ...);
-  }
-
-  static void serialize_implicitly_serializable_members_to(const std::span<std::byte> dest, const std::span<const std::byte> src) {
-    static constexpr std::size_t ENDIANNESS_RESISTANT_REGION_END{find_region_offset([]<typename /* Member */> { return true; })};
-
-    if constexpr (ENDIANNESS_MISMATCH) {
-      serialize_endianness_susceptible_members_to(dest, src);
-
-      static constexpr std::size_t ENDIANNESS_RESISTANT_REGION_START{
-        find_region_offset([]<typename Member> { return !endianness_resistant<Member>; })};
-      copy<ENDIANNESS_RESISTANT_REGION_START, ENDIANNESS_RESISTANT_REGION_END>(dest, src);
-    } else {
-      static constexpr std::size_t ENDIANNESS_SUSCEPTIBLE_REGION_START{
-        find_region_offset([]<typename Member> { return EXPLICITLY_SERIALIZABLE<Member>; })};
-      copy<ENDIANNESS_SUSCEPTIBLE_REGION_START, ENDIANNESS_RESISTANT_REGION_END>(dest, src);
-    }
-  }
-
-private:
-  template<instance_of<member> Member, std::integral Integral, std::integral... Integrals>
-  [[nodiscard]] static consteval auto to_integral() {
-    if constexpr (sizeof(typename Member::type) == sizeof(Integral)) {
-      return Integral{};
-    } else if constexpr (sizeof...(Integrals) > 0) {
-      return to_integral<Member, Integrals...>();
-    }
-  }
-
-  template<instance_of<member> Member>
-  requires (!instance_of<typename Member::type, std::array>)
-  static void serialize_to_if_endianness_susceptible(const std::span<std::byte> dest, const std::span<const std::byte> src) {
-    if constexpr (endianness_susceptible<Member>) {
-      using integral = decltype(to_integral<Member, std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t>());
-      static_assert(!std::is_void_v<integral>, "Member type sizes must be powers of 2 and at most 8 bytes");
-
-      integral& integral_dest{reinterpret_cast<integral&>(dest[Member::OFFSET])};
-      const integral& integral_src{reinterpret_cast<const integral&>(src[Member::OFFSET])};
-      integral_dest = std::byteswap(integral_src);
-    }
-  }
-
-  template<instance_of<member> ArrayMember, std::size_t INDEX = 0>
-  requires (instance_of<typename ArrayMember::type, std::array>)
-  static void serialize_to_if_endianness_susceptible(const std::span<std::byte> dest, const std::span<const std::byte> src) {
-    if constexpr (endianness_susceptible<ArrayMember> && INDEX < std::tuple_size_v<typename ArrayMember::type>) {
-      static constexpr std::size_t ELEMENT_OFFSET{ArrayMember::OFFSET + (INDEX * sizeof(typename ArrayMember::type::value_type))};
-
-      serialize_to_if_endianness_susceptible<member<typename ArrayMember::type::value_type, ELEMENT_OFFSET>>(dest, src);
-      serialize_to_if_endianness_susceptible<ArrayMember, INDEX + 1>(dest, src);
-    }
-  }
-
   [[nodiscard]] static consteval bool has_valid_member_order() {
     bool inside_endianness_susceptible_region{};
     bool inside_endianness_resistant_region{};
@@ -293,9 +238,90 @@ private:
     return last_member_is_before_offset ? offset + size : offset;
   }
 
+  template<instance_of<member> Member>
+  static constexpr bool EXPLICITLY_SERIALIZABLE{requires (dynamic_serializer d, const Member::type t) {
+    explicit_serializer::serialize(d, t);
+    requires std::same_as<typename Member::type, decltype(explicit_serializer::template deserialize<typename Member::type>(std::span<std::byte>{}))>;
+  } && !implicitly_serializable<Member>};
+
+  static constexpr std::size_t ENDIANNESS_SUSCEPTIBLE_REGION_START{
+    find_region_offset([]<typename Member> { return EXPLICITLY_SERIALIZABLE<Member>; })};
+
+  static constexpr std::size_t ENDIANNESS_RESISTANT_REGION_END{find_region_offset([]<typename /* Member */> { return true; })};
+
+public:
+  static constexpr bool VALID_MEMBERS{((EXPLICITLY_SERIALIZABLE<Members> || implicitly_serializable<Members>) && ...)};
+  static constexpr bool HAS_EXPLICITLY_SERIALIZABLE_MEMBER{(EXPLICITLY_SERIALIZABLE<Members> || ...)};
+
+  template<method GIVEN_METHOD, method PREFERRED_METHOD>
+  static constexpr bool VALID_METHOD{VALID_MEMBERS && !HAS_EXPLICITLY_SERIALIZABLE_MEMBER && GIVEN_METHOD == PREFERRED_METHOD};
+
+  static constexpr std::size_t IMPLICITLY_SERIALIZABLE_REGION_SIZE{ENDIANNESS_RESISTANT_REGION_END - ENDIANNESS_SUSCEPTIBLE_REGION_START};
+
+  static void serialize_endianness_susceptible_members_to(const std::span<std::byte> dest, const std::span<const std::byte> src) {
+    (serialize_to_if_endianness_susceptible<Members>(dest, src), ...);
+  }
+
+  static void serialize_implicitly_serializable_members_to(const std::span<std::byte> dest, const std::span<const std::byte> src) {
+    if constexpr (ENDIANNESS_MISMATCH) {
+      serialize_endianness_susceptible_members_to(dest, src);
+
+      static constexpr std::size_t ENDIANNESS_RESISTANT_REGION_START{
+        find_region_offset([]<typename Member> { return !endianness_resistant<Member>; })};
+      copy<ENDIANNESS_RESISTANT_REGION_START, ENDIANNESS_RESISTANT_REGION_END>(dest, src);
+    } else {
+      copy<ENDIANNESS_SUSCEPTIBLE_REGION_START, ENDIANNESS_RESISTANT_REGION_END>(dest, src);
+    }
+  }
+
+  static void serialize_explicitly_serializable_members_to(dynamic_serializer& dest, const std::span<const std::byte> src) {
+    (serialize_to_if_explicitly_serializable<Members>(dest, src), ...);
+  }
+
+private:
+  template<instance_of<member> Member, std::integral Integral, std::integral... Integrals>
+  [[nodiscard]] static consteval auto to_integral() {
+    if constexpr (sizeof(typename Member::type) == sizeof(Integral)) {
+      return Integral{};
+    } else if constexpr (sizeof...(Integrals) > 0) {
+      return to_integral<Member, Integrals...>();
+    }
+  }
+
+  template<instance_of<member> Member>
+  requires (!instance_of<typename Member::type, std::array>)
+  static void serialize_to_if_endianness_susceptible(const std::span<std::byte> dest, const std::span<const std::byte> src) {
+    if constexpr (endianness_susceptible<Member>) {
+      using integral = decltype(to_integral<Member, std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t>());
+      static_assert(!std::is_void_v<integral>, "Member type sizes must be powers of 2 and at most 8 bytes");
+
+      integral& integral_dest{reinterpret_cast<integral&>(dest[Member::OFFSET - ENDIANNESS_SUSCEPTIBLE_REGION_START])};
+      const integral& integral_src{reinterpret_cast<const integral&>(src[Member::OFFSET])};
+      integral_dest = std::byteswap(integral_src);
+    }
+  }
+
+  template<instance_of<member> ArrayMember, std::size_t INDEX = 0>
+  requires (instance_of<typename ArrayMember::type, std::array>)
+  static void serialize_to_if_endianness_susceptible(const std::span<std::byte> dest, const std::span<const std::byte> src) {
+    if constexpr (endianness_susceptible<ArrayMember> && INDEX < std::tuple_size_v<typename ArrayMember::type>) {
+      static constexpr std::size_t ELEMENT_OFFSET{ArrayMember::OFFSET + (INDEX * sizeof(typename ArrayMember::type::value_type))};
+
+      serialize_to_if_endianness_susceptible<member<typename ArrayMember::type::value_type, ELEMENT_OFFSET>>(dest, src);
+      serialize_to_if_endianness_susceptible<ArrayMember, INDEX + 1>(dest, src);
+    }
+  }
+
   template<std::size_t START_OFFSET, std::size_t END_OFFSET>
   static void copy(const std::span<std::byte> dest, const std::span<const std::byte> src) {
-    std::ranges::copy(src.subspan(START_OFFSET, END_OFFSET - START_OFFSET), dest.subspan(START_OFFSET).begin());
+    std::ranges::copy(src.subspan(START_OFFSET, END_OFFSET - START_OFFSET), dest.subspan(START_OFFSET - ENDIANNESS_SUSCEPTIBLE_REGION_START).begin());
+  }
+
+  template<instance_of<member> Member>
+  static void serialize_to_if_explicitly_serializable(dynamic_serializer& dest, const std::span<const std::byte> src) {
+    if constexpr (EXPLICITLY_SERIALIZABLE<Member>) {
+      explicit_serializer::serialize(dest, reinterpret_cast<const Member::type&>(src[Member::OFFSET]));
+    }
   }
 };
 
@@ -307,6 +333,8 @@ void dynamic_serializer<ENDIANNESS_MISMATCH>::serialize(const Numerical& numeric
 
 template<class Container>
 class depot : Container {
+  friend Container& get_container(depot& depot) { return static_cast<Container&>(depot); }
+
 public:
   using Container::Container;
   using Container::size;
@@ -334,6 +362,7 @@ template<class Package, std::endian ENDIANNESS, instance_of<member>... Members>
 struct package_serializer : std::type_identity<Package> {
 private:
   static constexpr bool ENDIANNESS_MISMATCH{std::endian::native != ENDIANNESS};
+
   using member_serializer = member_serializer<ENDIANNESS_MISMATCH, Members...>;
 
 public:
@@ -342,33 +371,43 @@ public:
 
   template<method /* METHOD */>
   requires (member_serializer::VALID_MEMBERS && member_serializer::HAS_EXPLICITLY_SERIALIZABLE_MEMBER)
-  static auto serialize(const std::span<const std::byte> package) {}
+  static auto serialize(const std::span<const std::byte> src) {
+    using dynamic_serializer = dynamic_serializer<ENDIANNESS_MISMATCH>;
+
+    depot<dynamic_serializer> depot;
+    dynamic_serializer& dest{get_container(depot)};
+    const std::span appended_data{dest.append(member_serializer::IMPLICITLY_SERIALIZABLE_REGION_SIZE)};
+
+    member_serializer::serialize_explicitly_serializable_members_to(dest, src);
+    member_serializer::serialize_implicitly_serializable_members_to(appended_data, src);
+    return depot;
+  }
 
   template<method METHOD, size_t PACKAGE_SIZE>
   requires (member_serializer::template VALID_METHOD<METHOD, method::MUTABLY>)
-  [[nodiscard]] static auto serialize(const std::span<std::byte, PACKAGE_SIZE> package) {
+  [[nodiscard]] static auto serialize(const std::span<std::byte, PACKAGE_SIZE> src_dest) {
     if constexpr (ENDIANNESS_MISMATCH) {
-      member_serializer::serialize_endianness_susceptible_members_to(package, package);
+      member_serializer::serialize_endianness_susceptible_members_to(src_dest, src_dest);
     }
 
-    return to_depot_span(package);
+    return to_depot_span(src_dest);
   }
 
   template<method METHOD, size_t PACKAGE_SIZE>
   requires (member_serializer::template VALID_METHOD<METHOD, method::IMMUTABLY>)
-  [[nodiscard]] static auto serialize(const std::span<const std::byte, PACKAGE_SIZE> package) {
+  [[nodiscard]] static auto serialize(const std::span<const std::byte, PACKAGE_SIZE> src_dest) {
     if constexpr (ENDIANNESS_MISMATCH) {
-      return serialize<method::NEW>(package);
+      return serialize<method::NEW>(src_dest);
     } else {
-      return to_depot_span(package);
+      return to_depot_span(src_dest);
     }
   }
 
   template<method METHOD, size_t PACKAGE_SIZE>
   requires (member_serializer::template VALID_METHOD<METHOD, method::NEW>)
-  [[nodiscard]] static auto serialize(const std::span<const std::byte, PACKAGE_SIZE> package) {
+  [[nodiscard]] static auto serialize(const std::span<const std::byte, PACKAGE_SIZE> src) {
     depot<std::array<std::byte, PACKAGE_SIZE>> depot;
-    member_serializer::serialize_implicitly_serializable_members_to(to_span(depot), package);
+    member_serializer::serialize_implicitly_serializable_members_to(to_span(depot), src);
     return depot;
   }
 

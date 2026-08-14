@@ -273,22 +273,26 @@ public:
     return *this;
   }
 
-  void preallocate(const std::size_t size) { reserve_at_least(m_size + size); }
-
-  void serialize(const auto& serializable) {
-    static constexpr bool BOUNDS_CHECKING{true};
-    serialize<BOUNDS_CHECKING>(serializable);
+  std::size_t preallocate(const std::size_t size) {
+    const std::size_t min_capacity{m_size + size};
+    reserve_at_least(min_capacity);
+    return min_capacity;
   }
 
-  void serialize_without_bounds_checking(const auto& serializable) {
-    static constexpr bool BOUNDS_CHECKING{false};
-    serialize<BOUNDS_CHECKING>(serializable);
+  template<typename Serializable>
+  requires SERIALIZABLE<Serializable>
+  void serialize(const Serializable& serializable) {
+    if constexpr (implicitly_serializable<member<Serializable>>) {
+      const std::size_t new_size{preallocate(sizeof(Serializable))};
+      member_serializer<Serializable>::serialize_implicitly_serializable_members_to(m_span.subspan(m_size), to_span(serializable));
+      m_size = new_size;
+    } else {
+      explicit_serializer<dynamic_serializer>::serialize(*this, serializable);
+    }
   }
 
   std::span<std::byte> append(const std::size_t size) {
-    const std::size_t new_size{m_size + size};
-    reserve_at_least(new_size);
-
+    const std::size_t new_size{preallocate(size)};
     const std::span appended_data{m_span.subspan(m_size, size)};
     m_size = new_size;
     return appended_data;
@@ -320,23 +324,6 @@ private:
     }
 
     m_span = new_span;
-  }
-
-  template<bool BOUNDS_CHECKING, typename Serializable>
-  requires SERIALIZABLE<Serializable>
-  void serialize(const Serializable& serializable) {
-    if constexpr (implicitly_serializable<member<Serializable>>) {
-      const std::size_t new_size{m_size + sizeof(Serializable)};
-
-      if constexpr (BOUNDS_CHECKING) {
-        reserve_at_least(new_size);
-      }
-
-      member_serializer<Serializable>::serialize_implicitly_serializable_members_to(m_span.subspan(m_size), to_span(serializable));
-      m_size = new_size;
-    } else {
-      explicit_serializer<dynamic_serializer>::serialize(*this, serializable);
-    }
   }
 };
 

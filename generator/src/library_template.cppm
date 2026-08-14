@@ -247,10 +247,10 @@ private:
 template<bool ENDIANNESS_MISMATCH>
 class dynamic_serializer : std::allocator<std::byte> {
   template<typename T>
-  using member_serializer = member_serializer<ENDIANNESS_MISMATCH, member<T>>;
+  using implicit_serializer = member_serializer<ENDIANNESS_MISMATCH, member<T>>;
 
   template<typename T>
-  static constexpr bool SERIALIZABLE{member_serializer<T>::VALID_MEMBERS};
+  static constexpr bool SERIALIZABLE{implicit_serializer<T>::VALID_MEMBERS};
 
 public:
   dynamic_serializer() = default;
@@ -263,7 +263,7 @@ public:
 
   dynamic_serializer(const dynamic_serializer& other) : m_size{other.m_size} {
     reserve_at_least(other.m_size);
-    std::memcpy(m_span.data(), other.m_span.data(), other.m_size);
+    std::ranges::copy(other.m_span.first(other.m_size), m_span.begin());
   }
 
   dynamic_serializer(dynamic_serializer&& other) noexcept { swap(other); }
@@ -284,10 +284,38 @@ public:
   void serialize(const Serializable& serializable) {
     if constexpr (implicitly_serializable<member<Serializable>>) {
       const std::size_t new_size{preallocate(sizeof(Serializable))};
-      member_serializer<Serializable>::serialize_implicitly_serializable_members_to(m_span.subspan(m_size), to_span(serializable));
+      serialize_implicitly(serializable);
       m_size = new_size;
     } else {
       explicit_serializer<dynamic_serializer>::serialize(*this, serializable);
+    }
+  }
+
+  template<typename Range>
+  requires (std::ranges::range<Range> && SERIALIZABLE<std::ranges::range_value_t<Range>>)
+  void serialize_range(const Range& range) {
+    using range_value = std::ranges::range_value_t<Range>;
+    using range_value_member = member<range_value>;
+
+    static constexpr bool CAN_PREALLOCATE{std::ranges::sized_range<Range> && implicitly_serializable<range_value_member>};
+    std::size_t new_size{};
+
+    if constexpr (CAN_PREALLOCATE) {
+      new_size = preallocate(std::ranges::size(range) * sizeof(range_value));
+    }
+
+    if constexpr (CAN_PREALLOCATE && (!ENDIANNESS_MISMATCH || endianness_resistant<range_value_member>)) {
+      std::ranges::copy(range, reinterpret_cast<range_value*>(get_unoccupied_space().data()));
+      m_size = new_size;
+    } else {
+      for (const range_value& element : range) {
+        if constexpr (CAN_PREALLOCATE) {
+          serialize_implicitly(element);
+          m_size += sizeof(element);
+        } else {
+          serialize(element);
+        }
+      }
     }
   }
 
@@ -319,12 +347,19 @@ private:
     const std::span new_span{allocate(new_capacity), new_capacity};
 
     if (m_span.data()) {
-      std::memcpy(new_span.data(), m_span.data(), m_size);
+      std::ranges::copy(m_span.first(m_size), new_span.begin());
       deallocate(m_span.data(), m_span.size());
     }
 
     m_span = new_span;
   }
+
+  template<typename T>
+  void serialize_implicitly(const T& t) {
+    implicit_serializer<T>::serialize_implicitly_serializable_members_to(get_unoccupied_space(), to_span(t));
+  }
+
+  [[nodiscard]] std::span<std::byte> get_unoccupied_space() const { return m_span.subspan(m_size); }
 };
 
 template<class Container>
@@ -357,7 +392,7 @@ namespace mbsl {
 template<class Package, std::endian ENDIANNESS, instance_of<member>... Members>
 struct package_serializer : std::type_identity<Package> {
 private:
-  static constexpr bool ENDIANNESS_MISMATCH{std::endian::native != ENDIANNESS && (endianness_susceptible<Members> || ...)};
+  static constexpr bool ENDIANNESS_MISMATCH{std::endian::native != ENDIANNESS};
 
   using member_serializer = member_serializer<ENDIANNESS_MISMATCH, Members...>;
 
@@ -392,7 +427,7 @@ public:
   template<method METHOD, size_t PACKAGE_SIZE>
   requires (member_serializer::template VALID_METHOD<METHOD, method::IMMUTABLY>)
   [[nodiscard]] static auto serialize(const std::span<const std::byte, PACKAGE_SIZE> src_dest) {
-    if constexpr (ENDIANNESS_MISMATCH) {
+    if constexpr (ENDIANNESS_MISMATCH && (endianness_susceptible<Members> || ...)) {
       return serialize<method::NEW>(src_dest);
     } else {
       return to_depot(src_dest);

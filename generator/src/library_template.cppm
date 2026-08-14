@@ -170,11 +170,7 @@ public:
                 "Endianness-susceptible members on mixed-endian systems are unsupported");
 
   static constexpr bool VALID_MEMBERS{((EXPLICITLY_SERIALIZABLE<Members> || implicitly_serializable<Members>) && ...)};
-  static constexpr bool HAS_EXPLICITLY_SERIALIZABLE_MEMBER{(EXPLICITLY_SERIALIZABLE<Members> || ...)};
-
-  template<method GIVEN_METHOD, method PREFERRED_METHOD>
-  static constexpr bool VALID_METHOD{VALID_MEMBERS && !HAS_EXPLICITLY_SERIALIZABLE_MEMBER && GIVEN_METHOD == PREFERRED_METHOD};
-
+  static constexpr bool ONLY_IMPLICITLY_SERIALIZABLE_MEMBERS{(implicitly_serializable<Members> && ...)};
   static constexpr std::size_t IMPLICITLY_SERIALIZABLE_REGION_SIZE{ENDIANNESS_RESISTANT_REGION_END - ENDIANNESS_SUSCEPTIBLE_REGION_START};
 
   static void serialize_endianness_susceptible_members_to(const std::span<std::byte> dest, const std::span<const std::byte> src) {
@@ -247,10 +243,10 @@ private:
 template<bool ENDIANNESS_MISMATCH>
 class dynamic_serializer : std::allocator<std::byte> {
   template<typename T>
-  using implicit_serializer = member_serializer<ENDIANNESS_MISMATCH, member<T>>;
+  using member_serializer = member_serializer<ENDIANNESS_MISMATCH, member<T>>;
 
   template<typename T>
-  static constexpr bool SERIALIZABLE{implicit_serializer<T>::VALID_MEMBERS};
+  static constexpr bool SERIALIZABLE{member_serializer<T>::VALID_MEMBERS};
 
 public:
   dynamic_serializer() = default;
@@ -356,7 +352,7 @@ private:
 
   template<typename T>
   void serialize_implicitly(const T& t) {
-    implicit_serializer<T>::serialize_implicitly_serializable_members_to(get_unoccupied_space(), to_span(t));
+    member_serializer<T>::serialize_implicitly_serializable_members_to(get_unoccupied_space(), to_span(t));
   }
 
   [[nodiscard]] std::span<std::byte> get_unoccupied_space() const { return m_span.subspan(m_size); }
@@ -401,8 +397,8 @@ public:
   static constexpr std::size_t REFLECTION_VALUES_SIZE_BYTES{REFLECTION_VALUES.size() * sizeof(typename decltype(REFLECTION_VALUES)::value_type)};
 
   template<method /* METHOD */>
-  requires (member_serializer::VALID_MEMBERS && member_serializer::HAS_EXPLICITLY_SERIALIZABLE_MEMBER)
-  static auto serialize(const std::span<const std::byte> src) {
+  requires member_serializer::VALID_MEMBERS
+  [[nodiscard]] static auto serialize(const std::span<const std::byte> src) {
     using dynamic_serializer = dynamic_serializer<ENDIANNESS_MISMATCH>;
 
     depot<dynamic_serializer> depot;
@@ -415,7 +411,7 @@ public:
   }
 
   template<method METHOD, size_t PACKAGE_SIZE>
-  requires (member_serializer::template VALID_METHOD<METHOD, method::MUTABLY>)
+  requires (member_serializer::ONLY_IMPLICITLY_SERIALIZABLE_MEMBERS && METHOD == method::MUTABLY)
   [[nodiscard]] static auto serialize(const std::span<std::byte, PACKAGE_SIZE> src_dest) {
     if constexpr (ENDIANNESS_MISMATCH) {
       member_serializer::serialize_endianness_susceptible_members_to(src_dest, src_dest);
@@ -425,7 +421,7 @@ public:
   }
 
   template<method METHOD, size_t PACKAGE_SIZE>
-  requires (member_serializer::template VALID_METHOD<METHOD, method::IMMUTABLY>)
+  requires (member_serializer::ONLY_IMPLICITLY_SERIALIZABLE_MEMBERS && METHOD == method::IMMUTABLY)
   [[nodiscard]] static auto serialize(const std::span<const std::byte, PACKAGE_SIZE> src_dest) {
     if constexpr (ENDIANNESS_MISMATCH && (endianness_susceptible<Members> || ...)) {
       return serialize<method::NEW>(src_dest);
@@ -435,7 +431,7 @@ public:
   }
 
   template<method METHOD, size_t PACKAGE_SIZE>
-  requires (member_serializer::template VALID_METHOD<METHOD, method::NEW>)
+  requires (member_serializer::ONLY_IMPLICITLY_SERIALIZABLE_MEMBERS && METHOD == method::NEW)
   [[nodiscard]] static auto serialize(const std::span<const std::byte, PACKAGE_SIZE> src) {
     depot<std::array<std::byte, PACKAGE_SIZE>> depot;
     member_serializer::serialize_implicitly_serializable_members_to(to_span(depot), src);

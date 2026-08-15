@@ -113,10 +113,19 @@ struct explicit_serializer;
 enum class method : std::uint8_t { MUTABLY, IMMUTABLY, NEW };
 
 template<typename T>
+using byte_type = std::conditional_t<std::is_const_v<T>, const std::byte, std::byte>;
+
+template<typename T>
 [[nodiscard]] auto to_span(T& t) {
-  using byte_type = std::conditional_t<std::is_const_v<T>, const std::byte, std::byte>;
-  return std::span<byte_type, sizeof(T)>{reinterpret_cast<byte_type*>(&t), sizeof(T)};
+  return std::span<byte_type<T>, sizeof(T)>{reinterpret_cast<byte_type<T>*>(&t), sizeof(T)};
 }
+
+template<typename T>
+[[nodiscard]] T& from_span(const std::span<byte_type<T>> span, const std::size_t offset) {
+  return reinterpret_cast<T&>(span.subspan(offset, sizeof(T)).front());
+}
+
+inline void copy(const std::span<std::byte> dest, const std::span<const std::byte> src) { std::ranges::copy(src, dest.first(src.size()).begin()); }
 
 template<bool ENDIANNESS_MISMATCH, instance_of<member>... Members>
 struct member_serializer {
@@ -183,9 +192,9 @@ public:
 
       static constexpr std::size_t ENDIANNESS_RESISTANT_REGION_START{
         find_region_offset([]<typename Member> { return !endianness_resistant<Member>; })};
-      copy<ENDIANNESS_RESISTANT_REGION_START, ENDIANNESS_RESISTANT_REGION_END>(dest, src);
+      copy(dest, src, ENDIANNESS_RESISTANT_REGION_START, ENDIANNESS_RESISTANT_REGION_END);
     } else {
-      copy<ENDIANNESS_SUSCEPTIBLE_REGION_START, ENDIANNESS_RESISTANT_REGION_END>(dest, src);
+      copy(dest, src, ENDIANNESS_SUSCEPTIBLE_REGION_START, ENDIANNESS_RESISTANT_REGION_END);
     }
   }
 
@@ -210,8 +219,8 @@ private:
       using integral = decltype(to_integral<Member, std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t>());
       static_assert(!std::is_void_v<integral>, "Member type sizes must be powers of 2 and at most 8 bytes");
 
-      integral& integral_dest{reinterpret_cast<integral&>(dest[Member::OFFSET - ENDIANNESS_SUSCEPTIBLE_REGION_START])};
-      const integral& integral_src{reinterpret_cast<const integral&>(src[Member::OFFSET])};
+      integral& integral_dest{from_span<integral>(dest, Member::OFFSET - ENDIANNESS_SUSCEPTIBLE_REGION_START)};
+      const integral& integral_src{from_span<const integral>(src, Member::OFFSET)};
       integral_dest = std::byteswap(integral_src);
     }
   }
@@ -227,15 +236,15 @@ private:
     }
   }
 
-  template<std::size_t START_OFFSET, std::size_t END_OFFSET>
-  static void copy(const std::span<std::byte> dest, const std::span<const std::byte> src) {
-    std::ranges::copy(src.subspan(START_OFFSET, END_OFFSET - START_OFFSET), dest.subspan(START_OFFSET - ENDIANNESS_SUSCEPTIBLE_REGION_START).begin());
+  static void copy(const std::span<std::byte> dest, const std::span<const std::byte> src, const std::size_t start_offset,
+                   const std::size_t end_offset) {
+    mbsl::copy(dest.subspan(start_offset - ENDIANNESS_SUSCEPTIBLE_REGION_START), src.subspan(start_offset, end_offset - start_offset));
   }
 
   template<instance_of<member> Member>
   static void serialize_to_if_explicitly_serializable(dynamic_serializer& dest, const std::span<const std::byte> src) {
     if constexpr (EXPLICITLY_SERIALIZABLE<Member>) {
-      explicit_serializer::serialize(dest, reinterpret_cast<const Member::type&>(src[Member::OFFSET]));
+      explicit_serializer::serialize(dest, from_span<const typename Member::type>(src, Member::OFFSET));
     }
   }
 };
@@ -259,7 +268,7 @@ public:
 
   dynamic_serializer(const dynamic_serializer& other) : m_size{other.m_size} {
     reserve_at_least(other.m_size);
-    std::ranges::copy(other.m_span.first(other.m_size), m_span.begin());
+    copy(m_span, other.m_span.first(other.m_size));
   }
 
   dynamic_serializer(dynamic_serializer&& other) noexcept { swap(other); }
@@ -290,18 +299,20 @@ public:
   template<typename Range>
   requires (std::ranges::range<Range> && SERIALIZABLE<std::ranges::range_value_t<Range>>)
   void serialize_range(const Range& range) {
-    using range_value = std::ranges::range_value_t<Range>;
+    using range_value = std::remove_const_t<std::ranges::range_value_t<Range>>;
     using range_value_member = member<range_value>;
 
     static constexpr bool CAN_PREALLOCATE{std::ranges::sized_range<Range> && implicitly_serializable<range_value_member>};
+    std::size_t byte_count{};
     std::size_t new_size{};
 
     if constexpr (CAN_PREALLOCATE) {
-      new_size = preallocate(std::ranges::size(range) * sizeof(range_value));
+      byte_count = std::ranges::size(range) * sizeof(range_value);
+      new_size = preallocate(byte_count);
     }
 
     if constexpr (CAN_PREALLOCATE && (!ENDIANNESS_MISMATCH || endianness_resistant<range_value_member>)) {
-      std::ranges::copy(range, reinterpret_cast<range_value*>(get_unoccupied_space().data()));
+      std::ranges::copy(range, reinterpret_cast<range_value*>(get_unoccupied_space().first(byte_count).data()));
       m_size = new_size;
     } else {
       for (const range_value& element : range) {
@@ -343,7 +354,7 @@ private:
     const std::span new_span{allocate(new_capacity), new_capacity};
 
     if (m_span.data()) {
-      std::ranges::copy(m_span.first(m_size), new_span.begin());
+      copy(new_span, m_span.first(m_size));
       deallocate(m_span.data(), m_span.size());
     }
 

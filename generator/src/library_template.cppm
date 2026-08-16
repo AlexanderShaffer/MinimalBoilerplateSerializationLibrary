@@ -113,15 +113,15 @@ struct explicit_serializer;
 enum class method : std::uint8_t { MUTABLY, IMMUTABLY, NEW };
 
 template<typename T>
-using byte_type = std::conditional_t<std::is_const_v<T>, const std::byte, std::byte>;
+using as_byte = std::conditional_t<std::is_const_v<T>, const std::byte, std::byte>;
 
 template<typename T>
 [[nodiscard]] auto to_span(T& t) {
-  return std::span<byte_type<T>, sizeof(T)>{reinterpret_cast<byte_type<T>*>(&t), sizeof(T)};
+  return std::span<as_byte<T>, sizeof(T)>{reinterpret_cast<as_byte<T>*>(&t), sizeof(T)};
 }
 
 template<typename T>
-[[nodiscard]] T& from_span(const std::span<byte_type<T>> span, const std::size_t offset) {
+[[nodiscard]] T& from_span(const std::span<as_byte<T>> span, const std::size_t offset) {
   return reinterpret_cast<T&>(span.subspan(offset, sizeof(T)).front());
 }
 
@@ -369,7 +369,14 @@ private:
   [[nodiscard]] std::span<std::byte> get_unoccupied_space() const { return m_span.subspan(m_size); }
 };
 
+template<typename T>
+concept byte = sizeof(T) == 1 && (std::integral<T> || std::is_enum_v<T>);
+
+template<typename T>
+concept byte_pointer = std::is_pointer_v<T> && byte<std::remove_pointer_t<T>>;
+
 template<class Container>
+requires requires (Container c) { requires byte_pointer<decltype(c.data())>; }
 class depot : Container {
   friend Container& get_container(depot& depot) { return static_cast<Container&>(depot); }
 
@@ -377,8 +384,7 @@ public:
   using Container::Container;
   using Container::size;
 
-  template<typename Byte>
-  requires (sizeof(Byte) == 1 && (std::integral<Byte> || std::is_enum_v<Byte>))
+  template<byte Byte>
   [[nodiscard]] const Byte* data() const noexcept(noexcept(Container::data())) {
     return reinterpret_cast<const Byte*>(Container::data());
   }
@@ -445,7 +451,7 @@ public:
   requires (member_serializer::ONLY_IMPLICITLY_SERIALIZABLE_MEMBERS && METHOD == method::NEW)
   [[nodiscard]] static auto serialize(const std::span<const std::byte, PACKAGE_SIZE> src) {
     depot<std::array<std::byte, PACKAGE_SIZE>> depot;
-    member_serializer::serialize_implicitly_serializable_members_to(to_span(depot), src);
+    member_serializer::serialize_implicitly_serializable_members_to(to_span(get_container(depot)), src);
     return depot;
   }
 

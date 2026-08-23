@@ -110,18 +110,19 @@ concept instance_of_dynamic_serializer = requires (T t) { requires std::same_as<
 template<typename DynamicSerializer>
 struct explicit_serializer;
 
-enum class method : std::uint8_t { MUTABLY, IMMUTABLY, NEW };
+template<typename Arg, typename Result>
+using same_constness_of = std::conditional_t<std::is_const_v<Arg>, std::add_const_t<Result>, std::remove_const_t<Result>>;
 
 template<typename T>
-using as_byte = std::conditional_t<std::is_const_v<T>, const std::byte, std::byte>;
+using as_std_byte = same_constness_of<T, std::byte>;
 
 template<typename T>
 [[nodiscard]] auto to_span(T& t) {
-  return std::span<as_byte<T>, sizeof(T)>{reinterpret_cast<as_byte<T>*>(&t), sizeof(T)};
+  return std::span<as_std_byte<T>, sizeof(T)>{reinterpret_cast<as_std_byte<T>*>(&t), sizeof(T)};
 }
 
 template<typename T>
-[[nodiscard]] T& from_span(const std::span<as_byte<T>> span, const std::size_t offset) {
+[[nodiscard]] T& from_span(const std::span<as_std_byte<T>> span, const std::size_t offset) {
   return reinterpret_cast<T&>(span.subspan(offset, sizeof(T)).front());
 }
 
@@ -378,7 +379,8 @@ concept byte_pointer = std::is_pointer_v<T> && byte<std::remove_pointer_t<T>>;
 template<class Container>
 requires requires (Container c) { requires byte_pointer<decltype(c.data())>; }
 class depot : Container {
-  friend Container& get_container(depot& depot) { return static_cast<Container&>(depot); }
+  template<class PackageSerializer>
+  friend struct serialization_mode;
 
 public:
   using Container::Container;
@@ -402,6 +404,39 @@ struct exported_definitions_template {
 constexpr std::string_view SECTION_3{R"(} // namespace mbsl
 
 namespace mbsl {
+template<class PackageSerializer>
+struct serialization_mode {
+  template<std::size_t N>
+  using allocation = depot<std::array<std::byte, N>>;
+
+  template<byte Byte, std::size_t N>
+  [[nodiscard]] static auto to_view(const std::span<Byte, N> src) {
+    return depot<std::span<const Byte, N>>{src.data(), src.size()};
+  }
+
+  template<typename Container>
+  [[nodiscard]] static Container& get_container(depot<Container>& depot) {
+    return static_cast<Container&>(depot);
+  }
+
+  [[nodiscard]] static auto execute_dynamically(const std::span<const std::byte> src) { return PackageSerializer::serialize_dynamically(src); }
+};
+
+template<class PackageSerializer>
+struct deserialization_mode {
+  template<std::size_t /* N */>
+  using allocation = PackageSerializer::package;
+
+  template<byte Byte>
+  [[nodiscard]] static decltype(auto) to_view(const std::span<Byte> src) {
+    return reinterpret_cast<same_constness_of<Byte, typename PackageSerializer::package>&>(src.front());
+  }
+
+  [[nodiscard]] static auto& get_container(PackageSerializer::package& package) { return package; }
+
+  [[nodiscard]] static auto execute_dynamically(const std::span<const std::byte> src) { return PackageSerializer::deserialize_dynamically(src); }
+};
+
 template<class Package, std::endian ENDIANNESS, instance_of<member>... Members>
 struct package_serializer : std::type_identity<Package> {
 private:
@@ -410,16 +445,17 @@ private:
   using member_serializer = member_serializer<ENDIANNESS_MISMATCH, Members...>;
 
 public:
+  using package = Package;
+
   static constexpr std::initializer_list<std::size_t> REFLECTION_VALUES{Members::OFFSET..., sizeof(typename Members::type)..., sizeof(Package)};
   static constexpr std::size_t REFLECTION_VALUES_SIZE_BYTES{REFLECTION_VALUES.size() * sizeof(typename decltype(REFLECTION_VALUES)::value_type)};
 
-  template<method /* METHOD */>
-  requires member_serializer::VALID_MEMBERS
-  [[nodiscard]] static auto serialize(const std::span<const std::byte> src) {
+  [[nodiscard]] static auto serialize_dynamically(const std::span<const std::byte> src)
+  requires member_serializer::VALID_MEMBERS {
     using dynamic_serializer = dynamic_serializer<ENDIANNESS_MISMATCH>;
 
     depot<dynamic_serializer> depot;
-    dynamic_serializer& dest{get_container(depot)};
+    dynamic_serializer& dest{serialization_mode<package_serializer>::get_container(depot)};
     const std::span appended_data{dest.append(member_serializer::IMPLICITLY_SERIALIZABLE_REGION_SIZE)};
 
     member_serializer::serialize_explicitly_serializable_members_to(dest, src);
@@ -427,39 +463,43 @@ public:
     return depot;
   }
 
-  template<method METHOD, size_t PACKAGE_SIZE>
-  requires (member_serializer::ONLY_IMPLICITLY_SERIALIZABLE_MEMBERS && METHOD == method::MUTABLY)
-  [[nodiscard]] static auto serialize(const std::span<std::byte, PACKAGE_SIZE> src_dest) {
+  static void deserialize_dynamically(const std::span<const std::byte> /* src */)
+  requires member_serializer::VALID_MEMBERS {
+    static_assert(false, "Operation currently unsupported");
+  }
+
+  [[nodiscard]] static consteval auto bind(const auto execute_statically) {
+    if constexpr (member_serializer::ONLY_IMPLICITLY_SERIALIZABLE_MEMBERS) {
+      return execute_statically;
+    } else {
+      return []<class Mode>(auto&& src) { return Mode::execute_dynamically(std::forward<decltype(src)>(src)); };
+    }
+  }
+
+  static constexpr auto EXECUTE_MUTABLY{bind([]<class Mode, std::size_t N> [[nodiscard]] (const std::span<std::byte, N> src_dest) -> decltype(auto) {
     if constexpr (ENDIANNESS_MISMATCH) {
       member_serializer::serialize_endianness_susceptible_members_to(src_dest, src_dest);
     }
 
-    return to_depot(src_dest);
-  }
+    return Mode::to_view(src_dest);
+  })};
 
-  template<method METHOD, size_t PACKAGE_SIZE>
-  requires (member_serializer::ONLY_IMPLICITLY_SERIALIZABLE_MEMBERS && METHOD == method::IMMUTABLY)
-  [[nodiscard]] static auto serialize(const std::span<const std::byte, PACKAGE_SIZE> src_dest) {
-    if constexpr (ENDIANNESS_MISMATCH && (endianness_susceptible<Members> || ...)) {
-      return serialize<method::NEW>(src_dest);
-    } else {
-      return to_depot(src_dest);
-    }
-  }
+  static constexpr auto EXECUTE_NEW{bind([]<class Mode, std::size_t N> [[nodiscard]] (const std::span<const std::byte, N> src) {
+    typename Mode::template allocation<N> allocation;
+    auto& container{Mode::get_container(allocation)};
 
-  template<method METHOD, size_t PACKAGE_SIZE>
-  requires (member_serializer::ONLY_IMPLICITLY_SERIALIZABLE_MEMBERS && METHOD == method::NEW)
-  [[nodiscard]] static auto serialize(const std::span<const std::byte, PACKAGE_SIZE> src) {
-    depot<std::array<std::byte, PACKAGE_SIZE>> depot;
-    member_serializer::serialize_implicitly_serializable_members_to(to_span(get_container(depot)), src);
-    return depot;
-  }
+    member_serializer::serialize_implicitly_serializable_members_to(to_span(container), src);
+    return allocation;
+  })};
 
-private:
-  template<typename T, std::size_t PACKAGE_SIZE>
-  [[nodiscard]] static auto to_depot(const std::span<T, PACKAGE_SIZE> package) {
-    return depot<std::span<const T, PACKAGE_SIZE>>{package.data(), package.size()};
-  }
+  static constexpr auto EXECUTE_IMMUTABLY{
+    bind([]<class Mode, std::size_t N> [[nodiscard]] (const std::span<const std::byte, N> src_dest) -> decltype(auto) {
+      if constexpr (ENDIANNESS_MISMATCH && (endianness_susceptible<Members> || ...)) {
+        return EXECUTE_NEW.template operator()<Mode>(src_dest);
+      } else {
+        return Mode::to_view(src_dest);
+      }
+    })};
 };
 
 namespace {
@@ -467,23 +507,23 @@ template<class Item = void, class... Items>
 struct vendor {
 private:
   template<class Package>
-  [[nodiscard]] static consteval auto find_package_serializer_linked_to() {
-    if constexpr (std::derived_from<Item, std::type_identity<Package>>) {
+  [[nodiscard]] static consteval auto get_serializer_linked_to() {
+    if constexpr (std::derived_from<Item, std::type_identity<std::remove_const_t<Package>>>) {
       return Item{};
-    } else if constexpr (requires { typename Item::template get<Package>; }) {
-      return typename Item::template get<Package>{};
+    } else if constexpr (requires { typename Item::template get_serializer<Package>; }) {
+      return typename Item::template get_serializer<Package>{};
     } else if constexpr (sizeof...(Items) > 0) {
-      return vendor<Items...>::template find_package_serializer_linked_to<Package>();
+      return vendor<Items...>::template get_serializer_linked_to<Package>();
     }
   }
 
   template<class Package>
-  static constexpr bool PACKAGE_EXISTS{!std::is_void_v<decltype(find_package_serializer_linked_to<Package>())>};
+  static constexpr bool PACKAGE_EXISTS{!std::is_void_v<decltype(get_serializer_linked_to<Package>())>};
 
 public:
   template<class Package>
   requires PACKAGE_EXISTS<Package>
-  using get = decltype(find_package_serializer_linked_to<Package>());
+  using get_serializer = decltype(get_serializer_linked_to<Package>());
 };
 
 template<instance_of<package_serializer>... Serializers>
@@ -520,9 +560,19 @@ constexpr std::string_view SECTION_4{R"(
 >;
 } // namespace
 
-template<method METHOD, typename Package>
-[[nodiscard]] auto serialize(Package& package) {
-  return registry::get<std::remove_const_t<Package>>::template serialize<METHOD>(to_span(package));
+template<typename Package>
+[[nodiscard]] auto serialize(const auto serialize, Package& package) {
+  using serialization_mode = serialization_mode<registry::get_serializer<Package>>;
+  return serialize.template operator()<serialization_mode>(to_span(package));
+}
+
+template<typename Package, byte Byte, std::size_t N>
+[[nodiscard]] decltype(auto) deserialize(const auto deserialize, const std::span<Byte, N> src) {
+  using std_byte = as_std_byte<Byte>;
+  using deserialization_mode = deserialization_mode<registry::get_serializer<Package>>;
+
+  const std::span<std_byte, N> std_byte_src{reinterpret_cast<std_byte*>(src.data()), N};
+  return deserialize.template operator()<deserialization_mode>(std_byte_src);
 }
 } // namespace mbsl
 
@@ -530,11 +580,34 @@ export namespace mbsl {
 template<typename Package>
 requires (!std::is_const_v<Package>)
 [[nodiscard]] auto serialize_mutably(Package& package) {
-  return serialize<method::MUTABLY>(package);
+  return serialize(registry::get_serializer<Package>::EXECUTE_MUTABLY, package);
 }
 
-[[nodiscard]] auto serialize_immutably(auto& package) { return serialize<method::IMMUTABLY>(std::as_const(package)); }
-[[nodiscard]] auto serialize_new(const auto& package) { return serialize<method::NEW>(package); }
+template<typename Package>
+[[nodiscard]] auto serialize_new(const Package& package) {
+  return serialize(registry::get_serializer<Package>::EXECUTE_NEW, package);
+}
+
+template<typename Package>
+[[nodiscard]] auto serialize_immutably(Package& package) {
+  return serialize(registry::get_serializer<Package>::EXECUTE_IMMUTABLY, std::as_const(package));
+}
+
+template<typename Package, byte Byte, std::size_t N>
+requires (!std::is_const_v<Byte>)
+[[nodiscard]] decltype(auto) deserialize_mutably(const std::span<Byte, N> src) {
+  return deserialize<Package>(registry::get_serializer<Package>::EXECUTE_MUTABLY, src);
+}
+
+template<typename Package, byte Byte, std::size_t N>
+[[nodiscard]] auto deserialize_new(const std::span<Byte, N> src) {
+  return deserialize<Package, std::add_const_t<Byte>, N>(registry::get_serializer<Package>::EXECUTE_NEW, src);
+}
+
+template<typename Package, byte Byte, std::size_t N>
+[[nodiscard]] decltype(auto) deserialize_immutably(const std::span<Byte, N> src) {
+  return deserialize<Package, std::add_const_t<Byte>, N>(registry::get_serializer<Package>::EXECUTE_IMMUTABLY, src);
+}
 } // namespace mbsl
 )"};
 } // namespace library_template

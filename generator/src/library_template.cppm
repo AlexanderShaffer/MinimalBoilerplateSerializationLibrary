@@ -571,7 +571,7 @@ template<typename Package, byte Byte, std::size_t N>
   using std_byte = as_std_byte<Byte>;
   using deserialization_mode = deserialization_mode<registry::get_serializer<Package>>;
 
-  const std::span<std_byte, N> std_byte_src{reinterpret_cast<std_byte*>(src.data()), N};
+  const std::span<std_byte, N> std_byte_src{reinterpret_cast<std_byte*>(src.data()), src.size()};
   return deserialize.template operator()<deserialization_mode>(std_byte_src);
 }
 } // namespace mbsl

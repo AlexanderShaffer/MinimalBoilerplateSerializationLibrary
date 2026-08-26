@@ -391,6 +391,10 @@ public:
     return reinterpret_cast<const Byte*>(Container::data());
   }
 };
+
+class deserialization_error : public std::logic_error {
+  using std::logic_error::logic_error;
+};
 )"};
 
 struct exported_definitions_template {
@@ -408,6 +412,8 @@ template<class PackageSerializer>
 struct serialization_mode {
   template<std::size_t N>
   using allocation = depot<std::array<std::byte, N>>;
+
+  static void validate_size(const auto /* src */) {}
 
   template<byte Byte, std::size_t N>
   [[nodiscard]] static auto to_view(const std::span<Byte, N> src) {
@@ -427,8 +433,19 @@ struct deserialization_mode {
   template<std::size_t /* N */>
   using allocation = PackageSerializer::package;
 
-  template<byte Byte>
-  [[nodiscard]] static decltype(auto) to_view(const std::span<Byte> src) {
+  template<byte Byte, std::size_t N>
+  static void validate_size(const std::span<Byte, N> src) {
+    if constexpr (N == std::dynamic_extent) {
+      if (src.size() < sizeof(typename PackageSerializer::package)) {
+        throw deserialization_error{"Insufficient buffer size"};
+      }
+    } else {
+      static_assert(N >= sizeof(typename PackageSerializer::package), "Insufficient buffer size to deserialize package");
+    }
+  }
+
+  template<byte Byte, std::size_t N>
+  [[nodiscard]] static decltype(auto) to_view(const std::span<Byte, N> src) {
     return reinterpret_cast<same_constness_of<Byte, typename PackageSerializer::package>&>(src.front());
   }
 
@@ -468,9 +485,12 @@ public:
     static_assert(false, "Operation currently unsupported");
   }
 
-  [[nodiscard]] static consteval auto bind(const auto execute_statically) {
+  [[nodiscard]] static consteval auto bind(const auto& execute_statically) {
     if constexpr (member_serializer::ONLY_IMPLICITLY_SERIALIZABLE_MEMBERS) {
-      return execute_statically;
+      return [=]<class Mode, byte Byte, std::size_t N>(const std::span<Byte, N> src) -> decltype(auto) {
+        Mode::validate_size(src);
+        return execute_statically.template operator()<Mode>(src);
+      };
     } else {
       return []<class Mode>(auto&& src) { return Mode::execute_dynamically(std::forward<decltype(src)>(src)); };
     }

@@ -110,11 +110,8 @@ concept instance_of_dynamic_serializer = requires (T t) { requires std::same_as<
 template<typename DynamicSerializer>
 struct explicit_serializer;
 
-template<typename Arg, typename Result>
-using same_constness_of = std::conditional_t<std::is_const_v<Arg>, std::add_const_t<Result>, std::remove_const_t<Result>>;
-
 template<typename T>
-using as_std_byte = same_constness_of<T, std::byte>;
+using as_std_byte = std::conditional_t<std::is_const_v<T>, const std::byte, std::byte>;
 
 template<typename T>
 [[nodiscard]] auto to_span(T& t) {
@@ -411,7 +408,10 @@ namespace mbsl {
 template<class PackageSerializer>
 struct serialization_mode {
   template<std::size_t N>
-  using allocation = depot<std::array<std::byte, N>>;
+  using execute_new_result = depot<std::array<std::byte, N>>;
+
+  template<std::size_t N>
+  using execute_new_allocation = execute_new_result<N>;
 
   static void validate_size(const auto /* src */) {}
 
@@ -428,10 +428,13 @@ struct serialization_mode {
   [[nodiscard]] static auto execute_dynamically(const std::span<const std::byte> src) { return PackageSerializer::serialize_dynamically(src); }
 };
 
-template<class PackageSerializer>
+template<class PackageSerializer, class Result>
 struct deserialization_mode {
   template<std::size_t /* N */>
-  using allocation = PackageSerializer::package;
+  using execute_new_result = Result;
+
+  template<std::size_t /* N */>
+  using execute_new_allocation = PackageSerializer::package;
 
   template<byte Byte, std::size_t N>
   static void validate_size(const std::span<Byte, N> src) {
@@ -446,11 +449,10 @@ struct deserialization_mode {
 
   template<byte Byte, std::size_t N>
   [[nodiscard]] static decltype(auto) to_view(const std::span<Byte, N> src) {
-    return reinterpret_cast<same_constness_of<Byte, typename PackageSerializer::package>&>(src.front());
+    return reinterpret_cast<Result&>(src.front());
   }
 
   [[nodiscard]] static auto& get_container(PackageSerializer::package& package) { return package; }
-
   [[nodiscard]] static auto execute_dynamically(const std::span<const std::byte> src) { return PackageSerializer::deserialize_dynamically(src); }
 };
 
@@ -504,16 +506,17 @@ public:
     return Mode::to_view(src_dest);
   })};
 
-  static constexpr auto EXECUTE_NEW{bind([]<class Mode, std::size_t N> [[nodiscard]] (const std::span<const std::byte, N> src) {
-    typename Mode::template allocation<N> allocation;
-    auto& container{Mode::get_container(allocation)};
+  static constexpr auto EXECUTE_NEW{
+    bind([]<class Mode, byte Byte, std::size_t N> [[nodiscard]] (const std::span<Byte, N> src) -> Mode::template execute_new_result<N> {
+      typename Mode::template execute_new_allocation<N> allocation;
+      auto& container{Mode::get_container(allocation)};
 
-    member_serializer::serialize_implicitly_serializable_members_to(to_span(container), src);
-    return allocation;
-  })};
+      member_serializer::serialize_implicitly_serializable_members_to(to_span(container), src);
+      return allocation;
+    })};
 
   static constexpr auto EXECUTE_IMMUTABLY{
-    bind([]<class Mode, std::size_t N> [[nodiscard]] (const std::span<const std::byte, N> src_dest) -> decltype(auto) {
+    bind([]<class Mode, byte Byte, std::size_t N> [[nodiscard]] (const std::span<Byte, N> src_dest) -> decltype(auto) {
       if constexpr (ENDIANNESS_MISMATCH && (endianness_susceptible<Members> || ...)) {
         return EXECUTE_NEW.template operator()<Mode>(src_dest);
       } else {
@@ -589,7 +592,7 @@ template<typename Package>
 template<typename Package, byte Byte, std::size_t N>
 [[nodiscard]] decltype(auto) deserialize(const auto deserialize, const std::span<Byte, N> src) {
   using std_byte = as_std_byte<Byte>;
-  using deserialization_mode = deserialization_mode<registry::get_serializer<Package>>;
+  using deserialization_mode = deserialization_mode<registry::get_serializer<Package>, Package>;
 
   const std::span<std_byte, N> std_byte_src{reinterpret_cast<std_byte*>(src.data()), src.size()};
   return deserialize.template operator()<deserialization_mode>(std_byte_src);
@@ -620,13 +623,13 @@ requires (!std::is_const_v<Byte>)
 }
 
 template<typename Package, byte Byte, std::size_t N>
-[[nodiscard]] auto deserialize_new(const std::span<Byte, N> src) {
-  return deserialize<Package, std::add_const_t<Byte>, N>(registry::get_serializer<Package>::EXECUTE_NEW, src);
+[[nodiscard]] decltype(auto) deserialize_new(const std::span<Byte, N> src) {
+  return deserialize<Package>(registry::get_serializer<Package>::EXECUTE_NEW, src);
 }
 
 template<typename Package, byte Byte, std::size_t N>
 [[nodiscard]] decltype(auto) deserialize_immutably(const std::span<Byte, N> src) {
-  return deserialize<Package, std::add_const_t<Byte>, N>(registry::get_serializer<Package>::EXECUTE_IMMUTABLY, src);
+  return deserialize<Package>(registry::get_serializer<Package>::EXECUTE_IMMUTABLY, src);
 }
 } // namespace mbsl
 )"};
